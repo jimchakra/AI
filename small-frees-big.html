@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Small Frees Big — What Real-Time RAN Silicon Taught Me About AI Inference Architecture</title>
+<style>
+  :root{
+    --ink:#16191d; --ink2:#33393f; --body:#2c3238; --muted:#6a727a;
+    --rule:#e2e5e8; --page:#ffffff;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--page);color:var(--body);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.68;font-size:16.5px;letter-spacing:.002em}
+  .wrap{max-width:684px;margin:0 auto;padding:60px 24px 104px}
+  header.post{margin-bottom:8px}
+  h1{font-size:30px;line-height:1.18;letter-spacing:-.5px;color:#2f3e50;margin:0 0 12px;font-weight:700}
+  .dek{font-size:17px;color:#586470;margin:0 0 14px;font-weight:400;line-height:1.5}
+  .meta{font-size:11.5px;color:#8a929a;text-transform:uppercase;letter-spacing:1.2px;border-bottom:1px solid var(--rule);padding-bottom:20px;margin-bottom:32px}
+  h2{font-size:19px;line-height:1.3;color:#2f3e50;margin:40px 0 9px;font-weight:650;letter-spacing:-.1px}
+  p{margin:0 0 17px}
+  strong{color:#2f3e50;font-weight:650}
+  em{color:var(--ink2)}
+  a{color:#1f4e79;text-decoration:none;border-bottom:1px solid #c9d4de}
+  a:hover{border-bottom-color:#1f4e79}
+  figure{margin:40px 0;width:min(94vw,1060px);position:relative;left:50%;transform:translateX(-50%)}
+  .fig-inner{border:1px solid var(--rule);border-radius:10px;
+    padding:20px 20px;background:#fff;box-shadow:0 1px 4px rgba(20,25,30,.06)}
+  figure svg{width:100%;height:auto;display:block}
+  figcaption{max-width:620px;margin-left:auto;margin-right:auto}
+  figcaption{font-size:13px;color:var(--muted);text-align:center;margin-top:14px;font-style:italic}
+  .bio{margin-top:48px;padding-top:22px;border-top:1px solid var(--rule);
+    font-size:14.5px;color:var(--muted);font-style:italic;line-height:1.6}
+  @media(max-width:640px){ body{font-size:16px} h1{font-size:25px} h2{font-size:17.5px} .wrap{padding:40px 18px 72px} }
+</style>
+</head>
+<body>
+<article class="wrap">
+  <header class="post">
+    <h1>Small Frees Big</h1>
+    <p class="dek">What real-time RAN silicon taught me about where AI inference architecture is heading</p>
+    <div class="meta">Systems &amp; heterogeneous silicon &middot; inference at the memory boundary</div>
+  </header>
+
+  <p>Most conversations about AI accelerators start &mdash; and often end &mdash; at the big engine: how many TOPS, how wide the systolic array, which numeric format. That engine matters, but after years designing baseband silicon for radio access networks I&rsquo;ve come to believe it&rsquo;s the <em>easy</em> part. The engineering that actually decides whether a system hits its deadlines and its power budget lives in the small, unglamorous compute <em>around</em> the big engine. And the shape of that surrounding system is turning out to be the same shape I kept building for RAN.</p>
+
+  <p>Let me explain the pattern, and why I think AI inference silicon is converging on it.</p>
+
+  <figure>
+    <div class="fig-inner">
+      <svg viewBox="0 0 1080 726" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" role="img" aria-label="Tiered, QoS-partitioned inference datapath diagram">
+        <defs>
+          <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="1.5" stdDeviation="3" flood-color="#1a2430" flood-opacity="0.14"/>
+          </filter>
+          <marker id="ar" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6.5,3 L0,6 Z" fill="#2f3e50"/></marker>
+          <marker id="arD" markerWidth="9" markerHeight="9" refX="6.5" refY="3" orient="auto"><path d="M0,0 L6.5,3 L0,6 Z" fill="#2f3e50"/></marker>
+        </defs>
+        <style>
+          .d-ttl{font-size:19px;font-weight:700;fill:#2a3947;letter-spacing:.2px}
+          .d-sub{font-size:12.5px;fill:#566574}
+          .d-hdr{font-size:13.5px;font-weight:700;fill:#2a3947}
+          .d-lead{font-size:11.5px;fill:#45566a}
+          .d-tag{font-size:10.5px;fill:#6f8092;letter-spacing:.4px}
+          .d-cellh{font-size:12px;font-weight:600;fill:#ffffff}
+          .d-cells{font-size:10px;fill:#41505f}
+          .d-encl{font-size:10.5px;font-weight:700;fill:#7a8ea0;letter-spacing:2px}
+          .d-note{font-size:11.5px;fill:#45566a}
+          .d-cap{font-size:12px;fill:#7a8ea0;font-style:italic}
+        </style>
+        <rect x="0" y="0" width="1080" height="726" fill="#ffffff"/>
+        <text x="540" y="34" text-anchor="middle" class="d-ttl">Tiered, QoS-Partitioned Inference Datapath</text>
+        <text x="540" y="55" text-anchor="middle" class="d-sub">a throughput engine fed by small, targeted, latency-aware compute &mdash; pushed toward the data</text>
+
+        <rect x="340" y="76" width="400" height="34" rx="17" fill="#a3b8ca" stroke="#7f93a4"/>
+        <text x="540" y="98" text-anchor="middle" class="d-lead">mixed workload &#183; interactive (latency) + batch (throughput)</text>
+        <line x1="540" y1="110" x2="540" y2="132" stroke="#2f3e50" stroke-width="1.5" marker-end="url(#ar)"/>
+
+        <rect x="48" y="134" width="984" height="286" rx="10" fill="#e3e9ef" stroke="#93a6b6" stroke-width="1.2" stroke-dasharray="2 5" stroke-linecap="round"/>
+        <text x="66" y="153" class="d-encl">ACCELERATOR SoC</text>
+
+        <g filter="url(#sh)">
+          <rect x="168" y="160" width="744" height="52" rx="7" fill="#dbe3ea" stroke="#7f93a4"/>
+          <rect x="168" y="160" width="4.5" height="52" rx="2" fill="#2f3e50"/>
+        </g>
+        <text x="190" y="184" class="d-hdr">QoS-aware scheduler</text>
+        <text x="190" y="201" class="d-lead">deadline / SLO dispatch &#8212; latency-critical &#8250; throughput &#8250; background</text>
+        <line x1="380" y1="212" x2="315" y2="240" stroke="#2f3e50" stroke-width="1.4" marker-end="url(#ar)"/>
+        <line x1="700" y1="212" x2="765" y2="240" stroke="#2f3e50" stroke-width="1.4" marker-end="url(#ar)"/>
+
+        <g filter="url(#sh)"><rect x="72" y="244" width="436" height="160" rx="7" fill="#dbe3ea" stroke="#7f93a4"/></g>
+        <text x="92" y="268" class="d-hdr">Latency tier</text>
+        <text x="92" y="286" class="d-lead">small real-time cores + targeted coprocessors</text>
+        <text x="92" y="303" class="d-tag">INTERACTIVE &#183; DECODE &#183; HARD SLO</text>
+        <rect x="92" y="314" width="95" height="74" rx="5" fill="#2f3e50" stroke="#243141"/><text x="139.5" y="349" text-anchor="middle" class="d-cellh">RT core</text><text x="139.5" y="365" text-anchor="middle" class="d-cells" style="fill:#b9c6d2">scalar</text>
+        <rect x="195" y="314" width="95" height="74" rx="5" fill="#2f3e50" stroke="#243141"/><text x="242.5" y="349" text-anchor="middle" class="d-cellh">RT core</text><text x="242.5" y="365" text-anchor="middle" class="d-cells" style="fill:#b9c6d2">scalar</text>
+        <rect x="298" y="314" width="95" height="74" rx="5" fill="#2f3e50" stroke="#8ea3b5" stroke-dasharray="3 2.5"/><text x="345.5" y="349" text-anchor="middle" class="d-cellh">coproc</text><text x="345.5" y="365" text-anchor="middle" class="d-cells" style="fill:#b9c6d2">fixed-fn</text>
+        <rect x="401" y="314" width="95" height="74" rx="5" fill="#2f3e50" stroke="#8ea3b5" stroke-dasharray="3 2.5"/><text x="448.5" y="349" text-anchor="middle" class="d-cellh">coproc</text><text x="448.5" y="365" text-anchor="middle" class="d-cells" style="fill:#b9c6d2">fixed-fn</text>
+
+        <text x="540" y="316" text-anchor="middle" class="d-tag" fill="#6f8092">SMALL</text>
+        <text x="540" y="330" text-anchor="middle" class="d-tag" fill="#6f8092">FREES</text>
+        <text x="540" y="344" text-anchor="middle" class="d-tag" fill="#6f8092">BIG</text>
+
+        <g filter="url(#sh)"><rect x="572" y="244" width="436" height="160" rx="7" fill="#dbe3ea" stroke="#7f93a4"/></g>
+        <text x="592" y="268" class="d-hdr">Throughput tier</text>
+        <text x="592" y="286" class="d-lead">large tensor / matmul engine</text>
+        <text x="592" y="303" class="d-tag">BATCH &#183; PREFILL &#183; HEAVY GEMM &amp; ATTENTION</text>
+        <rect x="592" y="314" width="396" height="74" rx="5" fill="#2f3e50" stroke="#243141"/>
+        <g stroke="#aebccb" stroke-width="1">
+          <line x1="641.5" y1="314" x2="641.5" y2="388"/><line x1="691" y1="314" x2="691" y2="388"/><line x1="740.5" y1="314" x2="740.5" y2="388"/>
+          <line x1="790" y1="314" x2="790" y2="388"/><line x1="839.5" y1="314" x2="839.5" y2="388"/><line x1="889" y1="314" x2="889" y2="388"/><line x1="938.5" y1="314" x2="938.5" y2="388"/>
+          <line x1="592" y1="338.7" x2="988" y2="338.7"/><line x1="592" y1="363.3" x2="988" y2="363.3"/>
+        </g>
+        <text x="790" y="356" text-anchor="middle" class="d-cellh" font-weight="700">systolic MAC array</text>
+
+        <rect x="48" y="432" width="984" height="150" rx="10" fill="#e3e9ef" stroke="#93a6b6" stroke-width="1.2" stroke-dasharray="2 5" stroke-linecap="round"/>
+        <text x="66" y="451" class="d-encl">3D-STACKED MEMORY</text>
+
+        <rect x="88" y="474" width="152" height="13" rx="2" fill="#a3b8ca" stroke="#7f93a4"/>
+        <rect x="88" y="491" width="152" height="13" rx="2" fill="#a3b8ca" stroke="#7f93a4"/>
+        <rect x="88" y="508" width="152" height="13" rx="2" fill="#a3b8ca" stroke="#7f93a4"/>
+        <rect x="88" y="525" width="152" height="13" rx="2" fill="#a3b8ca" stroke="#7f93a4"/>
+        <text x="164" y="558" text-anchor="middle" class="d-cells">DRAM banks &#183; weights / KV resident</text>
+
+        <g filter="url(#sh)">
+          <rect x="300" y="472" width="344" height="66" rx="7" fill="#2f3e50" stroke="#243141" stroke-width="1.4"/>
+          <rect x="300" y="472" width="4.5" height="66" rx="2" fill="#9db2c4"/>
+        </g>
+        <text x="322" y="495" class="d-hdr" style="fill:#ffffff">Near-memory compute</text>
+        <text x="322" y="513" class="d-lead" style="fill:#d6e0e8">base logic die &#183; small, targeted</text>
+        <text x="322" y="529" class="d-cells" style="fill:#b9c6d2">reduce / gate / filter before operands cross the bus</text>
+        <line x1="240" y1="505" x2="298" y2="505" stroke="#2f3e50" stroke-width="1.5" marker-end="url(#arD)"/>
+
+        <text x="820" y="494" text-anchor="middle" class="d-hdr" font-size="12.5">compute migrates toward the data</text>
+        <text x="820" y="513" text-anchor="middle" class="d-note">&#8594; less bus traffic &amp; energy</text>
+        <text x="820" y="530" text-anchor="middle" class="d-note">&#8594; big engine spends cycles on what differentiates</text>
+
+        <line x1="300" y1="432" x2="300" y2="406" stroke="#2f3e50" stroke-width="1.8" marker-end="url(#ar)"/>
+        <text x="309" y="424" class="d-cells">gated</text>
+        <line x1="790" y1="432" x2="790" y2="406" stroke="#2f3e50" stroke-width="1.8" marker-end="url(#ar)"/>
+        <text x="802" y="424" class="d-cells">operands</text>
+
+        <rect x="72" y="602" width="436" height="60" rx="7" fill="#a3b8ca" stroke="#7f93a4"/>
+        <text x="92" y="624" class="d-hdr" font-size="12.5">Real-time RAN datapath</text>
+        <text x="92" y="641" class="d-note">hard-RT coprocessors + a big engine,</text>
+        <text x="92" y="656" class="d-note">dispatched under microsecond deadlines</text>
+        <text x="540" y="639" text-anchor="middle" font-size="21" fill="#6f8092">&#8801;</text>
+        <rect x="572" y="602" width="436" height="60" rx="7" fill="#a3b8ca" stroke="#7f93a4"/>
+        <text x="592" y="624" class="d-hdr" font-size="12.5">AI inference silicon</text>
+        <text x="592" y="641" class="d-note">latency tier + throughput engine + near-memory,</text>
+        <text x="592" y="656" class="d-note">dispatched under service-level objectives</text>
+
+        <text x="540" y="700" text-anchor="middle" class="d-cap">The same heterogeneous, deadline-partitioned shape, from baseband to AI inference.</text>
+      </svg>
+    </div>
+    <figcaption>Fig. 1 &mdash; A tiered, QoS-partitioned inference datapath: a throughput engine fed by small, targeted, latency-aware compute, increasingly pushed toward the data.</figcaption>
+  </figure>
+
+  <h2>The pattern I kept building</h2>
+  <p>A real-time RAN datapath is not one big processor. It&rsquo;s a <strong>heterogeneous, deadline-partitioned system</strong>. There is a hard-real-time tier &mdash; small cores paired with targeted fixed-function coprocessors &mdash; that handles the work with unforgiving microsecond deadlines: channel estimation, equalization, decoding, the things that <em>must</em> finish inside a slot or the air interface breaks. And there is a second tier for the heavy, soft-deadline, increasingly AI-driven work &mdash; scheduling, beam prediction, channel-state compression &mdash; that can run a slot or two ahead and tolerate jitter.</p>
+
+  <p>The organizing principle across all of it is simple to state and hard to do well: <strong>small, targeted compute close to the work frees the big engine to do only what differentiates.</strong> You don&rsquo;t ask the throughput engine to spend its cycles on fixed-function housekeeping it will always be mediocre at; you spin out a cheap, specialized unit for that, and you let the expensive engine concentrate on the part that actually needs its generality. Wrapping it all is a <strong>QoS-aware scheduler</strong> that dispatches by deadline and priority &mdash; latency-critical first, throughput next, background last &mdash; so the tiers never fight over the same cycles at the wrong moment.</p>
+
+  <p>None of that was designed for AI. But look at where inference silicon is going.</p>
+
+  <h2>The same shape, in AI inference</h2>
+  <p><strong>Control-plane small cores plus a big compute engine is already the standard accelerator pattern.</strong> Modern NPUs pair a large tensor/matmul engine with small scalar and vector units that orchestrate dataflow, DMA, and control. That&rsquo;s the same split as a real-time core driving a fixed-function coprocessor &mdash; the labels differ, the topology doesn&rsquo;t.</p>
+
+  <p><strong>The latency-vs-throughput tiering is now the central problem in LLM serving.</strong> Interactive decode is latency-critical and largely memory-bound; prefill and batch work are throughput-bound and want to be packed. The field is actively splitting these onto different resources &mdash; &ldquo;disaggregated serving&rdquo; puts latency-sensitive and throughput-heavy phases on separate hardware pools, scheduled against service-level objectives. That is my hard-real-time tier and my soft-deadline tier, rediscovered under new names. If anything, the RAN version is <em>more</em> mature: we&rsquo;ve been enforcing microsecond deadlines with jitter budgets and priority-inversion analysis for years, while much of the AI-serving world is only now learning to take latency SLOs seriously.</p>
+
+  <p><strong>Small-fast-plus-big-heavy even shows up at the model level.</strong> Speculative decoding runs a small, fast draft model to propose tokens and a big model to verify them &mdash; &ldquo;the many small&rdquo; feeding &ldquo;the one big,&rdquo; applied to models instead of cores. Same instinct, different layer of the stack.</p>
+
+  <h2>Where it points: compute migrates toward the data</h2>
+  <p>Here&rsquo;s the part I find most interesting. If the principle is <em>small targeted compute close to the work frees the big engine</em>, then the logical endpoint is to keep pushing that small tier <strong>toward the data</strong> &mdash; because in inference the data movement, not the arithmetic, is what dominates both latency and energy. Reading operands across the package costs orders of magnitude more energy than the multiply that consumes them.</p>
+
+  <p>That&rsquo;s exactly the thesis behind near-memory and processing-in-memory: put small, targeted compute on the memory side &mdash; the base logic die of a 3D stack &mdash; so it can reduce, gate, and filter operands <em>before</em> they ever cross the bus. The big engine then receives a smaller, denser stream and spends its cycles on what differentiates. It is the same &ldquo;small frees big&rdquo; move as my fixed-function RAN coprocessors, relocated from beside the compute to beside the memory. I think that migration continues, and that the interesting accelerator design work over the next several years is less about the tensor array and more about this distributed, data-adjacent small tier and the scheduler that governs it.</p>
+
+  <h2>The ingredient AI silicon is missing</h2>
+  <p>There&rsquo;s a skill gap worth naming. Throughput-first, deadline-relaxed thinking is deep in the AI-accelerator world; hard-real-time discipline is not. Worst-case execution time, bounded jitter, priority inversion, provable deadline margins &mdash; these are second nature in RAN and scarce in AI serving, and they are precisely what latency-bound inference (interactive agents, edge, automotive, robotics, and AI-RAN itself) is going to demand. The tiered, QoS-partitioned architecture in the figure isn&rsquo;t just a nice diagram; making it <em>meet deadlines under load</em> is a real-time-systems problem, and that&rsquo;s a body of practice the AI world is currently importing the hard way.</p>
+
+  <h2>The through-line</h2>
+  <p>So: is a two-tier &ldquo;small for quick jobs, big for heavy jobs&rdquo; processor relevant to modern AI-ASIC thinking? It&rsquo;s not just relevant &mdash; a heterogeneous, QoS-partitioned design with a big throughput engine fed by small, targeted, latency-aware compute is close to where inference silicon is landing. RAN got there first because the air interface never let us pretend the big engine was the whole story. The same forces &mdash; deadlines, data movement, energy &mdash; are now doing to AI inference what they did to baseband a decade ago.</p>
+
+  <p><strong>The big engine is the easy part. The system around it is the architecture.</strong></p>
+
+  <div class="bio">I work at the intersection of real-time systems and heterogeneous silicon, and I&rsquo;m increasingly focused on how those disciplines apply to AI inference at the memory boundary. If you&rsquo;re working on inference architecture, near-memory compute, or AI-RAN, I&rsquo;d enjoy comparing notes.</div>
+</article>
+</body>
+</html>
