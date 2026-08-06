@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Inference Architecture — Essays</title>
+<meta name="description" content="Essays on heterogeneous silicon, real-time systems, and compute at the memory boundary — from RAN to AI inference.">
+<style>
+  :root{ --navy:#2f3e50; --body:#2c3238; --muted:#6a727a; --faint:#8a929a; --rule:#e6e9ec; --page:#ffffff; }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--page);color:var(--body);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.6;font-size:16.5px;letter-spacing:.002em}
+  .wrap{max-width:684px;margin:0 auto;padding:72px 24px 96px}
+
+  .eyebrow{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:1.4px;margin:0 0 14px}
+  h1{font-size:31px;line-height:1.16;letter-spacing:-.5px;color:var(--navy);margin:0 0 14px;font-weight:700}
+  .lede{font-size:17px;color:#586470;line-height:1.5;margin:0 0 4px;font-weight:400}
+  .rule{height:1px;background:var(--rule);border:0;margin:34px 0 30px}
+
+  .list{display:flex;flex-direction:column;gap:18px}
+  a.card{display:block;text-decoration:none;color:inherit;border:1px solid var(--rule);border-radius:12px;
+    padding:22px 24px;background:#fff;transition:border-color .15s ease, box-shadow .15s ease, transform .15s ease}
+  a.card:hover{border-color:#c3ccd4;box-shadow:0 4px 18px rgba(31,41,51,.08);transform:translateY(-1px)}
+  .card-meta{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:9px}
+  .card-title{font-size:21px;font-weight:700;color:var(--navy);letter-spacing:-.3px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+  .arw{font-size:17px;color:#9aa6b0;transition:transform .15s ease, color .15s ease}
+  a.card:hover .arw{transform:translateX(3px);color:var(--navy)}
+  .card-sub{font-size:15px;color:#48525c;font-style:italic;margin:0 0 10px;line-height:1.4}
+  .card-desc{font-size:14.5px;color:var(--muted);margin:0;line-height:1.6}
+
+  .card.soon{background:#f7f9fa;border-style:dashed;cursor:default}
+  .card.soon .card-title{color:#5b6874}
+  .card.soon .card-desc{color:var(--faint)}
+
+  .foot{margin-top:44px;padding-top:22px;border-top:1px solid var(--rule);font-size:14px;color:var(--muted);line-height:1.7}
+  .foot .lbl{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--faint);display:block;margin-bottom:6px}
+  .foot a{color:var(--navy);text-decoration:none;border-bottom:1px solid #cbd4dc}
+  .foot a:hover{border-bottom-color:var(--navy)}
+  @media(max-width:640px){ body{font-size:16px} h1{font-size:26px} .wrap{padding:48px 18px 72px} a.card{padding:18px 18px} }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <p class="eyebrow">AI Inference Architecture</p>
+  <h1>Essays on real-time &amp; memory-bound inference</h1>
+  <p class="lede">Heterogeneous silicon, deadline-driven systems, and compute at the memory boundary — notes from building baseband silicon, applied to where AI inference is heading.</p>
+
+  <hr class="rule">
+
+  <div class="list">
+    <a class="card" href="small-frees-big.html">
+      <div class="card-meta">August 2026 · Architecture</div>
+      <div class="card-title">Small Frees Big <span class="arw">&#8594;</span></div>
+      <div class="card-sub">What real-time RAN silicon taught me about where AI inference architecture is heading.</div>
+      <p class="card-desc">The big engine is the easy part. A tiered, QoS-partitioned datapath — small, targeted, latency-aware compute feeding a throughput engine, pushed toward the data — is where inference silicon is converging, and it's the shape RAN got to first.</p>
+    </a>
+
+    <div class="card soon">
+      <div class="card-meta">Coming next in the series</div>
+      <div class="card-title">Part II — Compute at the memory boundary</div>
+      <p class="card-desc">Why data movement, not arithmetic, sets the limit for modern inference — and what moving small, targeted compute toward the data changes.</p>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span class="lbl">Elsewhere</span>
+    <a href="https://jimchakra.github.io/6g-ran-ru-du-architecture/">6G RAN RU/DU architecture &#8594;</a>
+  </div>
+</main>
+</body>
+</html>
