@@ -1,0 +1,97 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compute at the memory boundary — early results</title>
+<meta name="description" content="Early results and roadmap for a near-memory gated-reduction inference datapath: energy model, a bit-exact tile, and a lossless-to-lossy gate sweep.">
+<style>
+ :root{--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+   --serif:Georgia,"Iowan Old Style",Charter,"Times New Roman",serif;
+   --ink:#2f3e50;--body:#33404d;--muted:#6a757f;--faint:#93a1b0;--rule:#e4e9ee;
+   --zone:#eef3f8;--accent:#43648f;--page:#ffffff;--ok:#2e7d5b;--warn:#8a5a1a;}
+ *{box-sizing:border-box} body{margin:0;background:var(--page);color:var(--body);
+   font-family:var(--sans);line-height:1.55;font-size:15px}
+ .wrap{max-width:1000px;margin:0 auto;padding:56px 26px 96px}
+ .eyebrow{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:1.4px;margin:0 0 12px}
+ h1{font-family:var(--serif);font-size:30px;color:var(--ink);margin:0 0 10px;letter-spacing:-.3px;font-weight:700}
+ .dek{color:#586470;margin:0 0 16px;font-size:16px;max-width:70ch}
+ .nav{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px}
+ .nav a{font-size:13px;color:var(--accent);text-decoration:none;border:1px solid #cdd8e2;border-radius:20px;padding:5px 13px}
+ .nav a:hover{background:var(--zone)}
+ .pill{font-size:11px;font-weight:700;letter-spacing:.6px;color:#fff;background:linear-gradient(160deg,#4c6f9c,#3c597f);border-radius:20px;padding:6px 13px}
+ h2{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--faint);margin:44px 0 16px;padding-bottom:7px;border-bottom:1px solid var(--rule)}
+ .tiles{display:flex;gap:14px;flex-wrap:wrap}
+ .tile{flex:1;min-width:200px;border-radius:14px;padding:18px 20px;color:#fff;background:linear-gradient(160deg,#4c6f9c,#3c597f);box-shadow:0 2px 10px rgba(31,60,100,.12)}
+ .tile .big{font-size:30px;font-weight:700;letter-spacing:-.5px} .tile .lab{font-size:12.5px;opacity:.92;margin-top:4px;line-height:1.4}
+ .tile.soft{background:#fff;color:var(--ink);border:1px solid var(--rule);box-shadow:none} .tile.soft .lab{color:var(--muted)}
+ .grid2{display:grid;grid-template-columns:1.15fr .85fr;gap:18px;align-items:start;margin-top:18px}
+ .card{background:#fff;border:1px solid var(--rule);border-radius:14px;padding:18px 20px;box-shadow:0 1px 3px rgba(20,35,55,.05)}
+ .card h3{margin:0 0 4px;font-size:15px;color:var(--ink)} .card .sic{color:var(--muted);font-size:13px;margin:0 0 12px}
+ svg{width:100%;height:auto;display:block}
+ .leg{font-size:12px;color:var(--muted);margin-top:6px} .sw{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin:0 4px 0 12px}
+ table{border-collapse:collapse;width:100%;font-size:12.5px} th,td{text-align:right;padding:5px 8px;border-bottom:1px solid var(--rule)}
+ th:first-child,td:first-child{text-align:left} th{color:var(--faint);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+ .ok{color:var(--ok);font-weight:600} .lossy{color:var(--warn)}
+ .rmap{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+ .rc{border-radius:12px;padding:14px 16px;border:1px solid var(--rule);background:#fff}
+ .rc.next{background:var(--zone)} .rc.later{background:#f7f9fb;border-style:dashed}
+ .rb{font-size:10px;font-weight:700;letter-spacing:1px;padding:2px 8px;border-radius:20px;display:inline-block;margin-bottom:8px}
+ .rc.done .rb{background:#e4f1ea;color:var(--ok)} .rc.next .rb{background:#dbe6f2;color:var(--accent)} .rc.later .rb{background:#eceff2;color:var(--faint)}
+ .rt{font-weight:700;color:var(--ink);font-size:14px;margin-bottom:3px} .rd{color:var(--muted);font-size:12.5px;line-height:1.45}
+ .ax{font-size:11px;fill:var(--faint)} .axl{font-size:10.5px;fill:var(--faint)}
+ .foot{margin-top:44px;padding-top:18px;border-top:1px solid var(--rule);color:var(--faint);font-size:12.5px;line-height:1.7}
+ .foot a{color:var(--accent);text-decoration:none;border-bottom:1px solid #cdd8e2}
+ @media(max-width:720px){.grid2{grid-template-columns:1fr} h1{font-size:25px}}
+</style></head><body><main class="wrap">
+ <p class="eyebrow">AI Inference Architecture</p>
+ <h1>Compute at the memory boundary — early results</h1>
+ <p class="dek">A near-memory gated-reduction datapath, taken from a first-order energy model to a bit-exact hardware tile. Companion to the essay <em>Small Frees Big</em>. The idea: complete the reduction where the data lives, gate the outputs there, and return only what survives.</p>
+ <div class="nav">
+   <a href="small-frees-big.html">Read the essay ↗</a>
+   <a href="inference_energy_sim.py">Energy model (code) ↗</a>
+   <a href="./">Home</a>
+   <span class="pill">PATENT PENDING</span>
+ </div>
+
+ <h2>Results so far</h2>
+ <div class="tiles">
+   <div class="tile"><div class="big">17.5×</div><div class="lab">less per-token energy from locality (near-memory vs off-package DRAM); 3.5× vs HBM</div></div>
+   <div class="tile"><div class="big">&gt;90%</div><div class="lab">of memory-bound decode energy is data movement — compute is ≈0.4%</div></div>
+   <div class="tile soft"><div class="big">θ=0</div><div class="lab">the gate is lossless here: 54% sparsity and 0.58× return traffic at zero accuracy cost</div></div>
+ </div>
+
+ <div class="grid2">
+   <div class="card">
+     <h3>The gate threshold — a lossless→lossy knob</h3>
+     <p class="sic">As θ rises, sparsity increases and return traffic shrinks, but signal fidelity (SQNR) falls. At θ=0 the gate only removes what ReLU already zeroes — exact.</p>
+     <svg viewBox="0 0 640 220" role="img" aria-label="Sparsity and SQNR versus gate threshold">
+       <line x1="64" y1="188" x2="604" y2="188" stroke="#dce3ea"/><line x1="64" y1="34" x2="64" y2="188" stroke="#dce3ea"/>
+       <polyline points="64.0,104.7 131.5,99.9 199.0,95.4 266.5,91.9 334.0,85.4 401.5,74.2 469.0,62.6 536.5,48.0 604.0,37.2" fill="none" stroke="#43648f" stroke-width="2.4"/>
+       <polyline points="131.5,50.9 199.0,76.7 266.5,91.8 334.0,111.8 401.5,135.3 469.0,152.2 536.5,169.5 604.0,182.6" fill="none" stroke="#9db3c9" stroke-width="2" stroke-dasharray="5 4"/>
+       <circle cx="64.0" cy="104.7" r="3.2" fill="#43648f"/><circle cx="131.5" cy="99.9" r="3.2" fill="#43648f"/><circle cx="199.0" cy="95.4" r="3.2" fill="#43648f"/><circle cx="266.5" cy="91.9" r="3.2" fill="#43648f"/><circle cx="334.0" cy="85.4" r="3.2" fill="#43648f"/><circle cx="401.5" cy="74.2" r="3.2" fill="#43648f"/><circle cx="469.0" cy="62.6" r="3.2" fill="#43648f"/><circle cx="536.5" cy="48.0" r="3.2" fill="#43648f"/><circle cx="604.0" cy="37.2" r="3.2" fill="#43648f"/><circle cx="131.5" cy="50.9" r="3" fill="#9db3c9"/><circle cx="199.0" cy="76.7" r="3" fill="#9db3c9"/><circle cx="266.5" cy="91.8" r="3" fill="#9db3c9"/><circle cx="334.0" cy="111.8" r="3" fill="#9db3c9"/><circle cx="401.5" cy="135.3" r="3" fill="#9db3c9"/><circle cx="469.0" cy="152.2" r="3" fill="#9db3c9"/><circle cx="536.5" cy="169.5" r="3" fill="#9db3c9"/><circle cx="604.0" cy="182.6" r="3" fill="#9db3c9"/>
+       <text x="64" y="26" class="axl">sparsity ↑ / SQNR ↓</text>
+       <text x="334" y="218" text-anchor="middle" class="ax">gate threshold θ</text><text x="64.0" y="204" text-anchor="middle" class="ax">0</text><text x="131.5" y="204" text-anchor="middle" class="ax">1</text><text x="199.0" y="204" text-anchor="middle" class="ax">2</text><text x="266.5" y="204" text-anchor="middle" class="ax">3</text><text x="334.0" y="204" text-anchor="middle" class="ax">5</text><text x="401.5" y="204" text-anchor="middle" class="ax">8</text><text x="469.0" y="204" text-anchor="middle" class="ax">12</text><text x="536.5" y="204" text-anchor="middle" class="ax">20</text><text x="604.0" y="204" text-anchor="middle" class="ax">32</text>
+     </svg>
+     <div class="leg"><span class="sw" style="background:#43648f"></span>sparsity (%)<span class="sw" style="background:#9db3c9"></span>SQNR (dB)</div>
+   </div>
+   <div class="card">
+     <h3>Per-tile numbers</h3>
+     <p class="sic">Reference tile, int8×int4, K=128, 64 outputs.</p>
+     <table><tr><th>θ</th><th>spars.</th><th>return</th><th>SQNR</th><th>mode</th></tr><tr><td>0</td><td>54.1%</td><td>0.58×</td><td>∞</td><td><span class=ok>lossless</span></td></tr><tr><td>1</td><td>57.2%</td><td>0.55×</td><td>35.6</td><td><span class=lossy>lossy</span></td></tr><tr><td>2</td><td>60.1%</td><td>0.52×</td><td>28.9</td><td><span class=lossy>lossy</span></td></tr><tr><td>3</td><td>62.4%</td><td>0.50×</td><td>25.0</td><td><span class=lossy>lossy</span></td></tr><tr><td>5</td><td>66.6%</td><td>0.46×</td><td>19.8</td><td><span class=lossy>lossy</span></td></tr><tr><td>8</td><td>73.9%</td><td>0.39×</td><td>13.7</td><td><span class=lossy>lossy</span></td></tr><tr><td>12</td><td>81.4%</td><td>0.31×</td><td>9.3</td><td><span class=lossy>lossy</span></td></tr><tr><td>20</td><td>90.9%</td><td>0.22×</td><td>4.8</td><td><span class=lossy>lossy</span></td></tr><tr><td>32</td><td>97.9%</td><td>0.15×</td><td>1.4</td><td><span class=lossy>lossy</span></td></tr></table>
+   </div>
+ </div>
+
+ <h2>Roadmap</h2>
+ <div class="rmap">
+ <div class="rc done"><div class="rb">DONE</div><div class="rt">Thesis + essay</div><div class="rd">‘Small Frees Big’ — data movement dominates inference; the two frontiers of compute-near-data.</div></div>
+<div class="rc done"><div class="rb">DONE</div><div class="rt">Energy model</div><div class="rd">Open-source compute-vs-movement + $/token model with an honest array-access / transport split.</div></div>
+<div class="rc done"><div class="rb">DONE</div><div class="rt">Near-memory tile — contract</div><div class="rd">Parameterized spec, bit-exact golden reference, test vectors, and the θ lossless→lossy sweep.</div></div>
+<div class="rc done"><div class="rb">DONE</div><div class="rt">Provisional patent</div><div class="rd">Near-memory distributed reduction with in-situ output gating — filed, patent pending.</div></div>
+<div class="rc next"><div class="rb">NEXT</div><div class="rt">RTL + bit-exact verification</div><div class="rd">Synthesizable Verilog for the tile, proven against the golden vectors in simulation.</div></div>
+<div class="rc next"><div class="rb">NEXT</div><div class="rt">Synthesis → area / power / $·token</div><div class="rd">Open-PDK synthesis for grounded PPA, folded back into the energy model for cost per token.</div></div>
+<div class="rc next"><div class="rb">NEXT</div><div class="rt">Accuracy vs θ on a real model</div><div class="rd">End-to-end perplexity/accuracy sweep — the true performance-loss curve behind the gate.</div></div>
+<div class="rc later"><div class="rb">EXPLORING</div><div class="rt">Hardware-in-the-loop cosim</div><div class="rd">A real forward pass calling the simulated block for one layer.</div></div>
+ </div>
+
+ <div class="foot">Companion to <a href="small-frees-big.html">Small Frees Big</a> · energy model:
+   <a href="inference_energy_sim.py">inference_energy_sim.py</a>. Figures are first-order models,
+   pending RTL synthesis and end-to-end accuracy evaluation.</div>
+</main></body></html>

@@ -20,6 +20,7 @@
   .rule{height:1px;background:var(--rule);border:0;margin:34px 0 30px}
 
   .list{display:flex;flex-direction:column;gap:18px}
+  .sec{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:1.4px;margin:36px 0 14px;font-weight:600}
   a.card{display:block;text-decoration:none;color:inherit;border:1px solid var(--rule);border-radius:12px;
     padding:22px 24px;background:#fff;transition:border-color .15s ease, box-shadow .15s ease, transform .15s ease}
   a.card:hover{border-color:#c3ccd4;box-shadow:0 4px 18px rgba(31,41,51,.08);transform:translateY(-1px)}
@@ -44,24 +45,47 @@
 <body>
 <main class="wrap">
   <p class="eyebrow">AI Inference Architecture</p>
-  <h1>Essays on real-time &amp; memory-bound inference</h1>
-  <p class="lede">Heterogeneous silicon, deadline-driven systems, and compute at the memory boundary — notes from building baseband silicon, applied to where AI inference is heading.</p>
+  <h1>Real-time &amp; memory-bound inference</h1>
+  <p class="lede">Heterogeneous silicon, deadline-driven systems, and compute at the memory boundary — writing, working code, and early silicon results, from building baseband silicon and applying it to where AI inference is heading.</p>
 
   <hr class="rule">
 
+  <div class="sec">Writing</div>
   <div class="list">
     <a class="card" href="small-frees-big.html">
       <div class="card-meta">August 2026 · Architecture</div>
       <div class="card-title">Small Frees Big <span class="arw">&#8594;</span></div>
       <div class="card-sub">What real-time RAN silicon taught me about where AI inference architecture is heading.</div>
-      <p class="card-desc">The big engine is the easy part. A tiered, QoS-partitioned datapath — small, targeted, latency-aware compute feeding a throughput engine, pushed toward the data — is where inference silicon is converging, and it's the shape RAN got to first.</p>
+      <p class="card-desc">Rare earth isn't rare — you just pay to move mountains of ore for a trace of metal. Modern inference runs on the same economics: the arithmetic is nearly free, and moving the data is the whole bill. One argument in two moves — small, targeted compute is the hero, and the next move is pushing some of it onto the memory itself — the shape RAN reached first.</p>
     </a>
 
-    <div class="card soon">
-      <div class="card-meta">Coming next in the series</div>
-      <div class="card-title">Part II — Compute at the memory boundary</div>
-      <p class="card-desc">Why data movement, not arithmetic, sets the limit for modern inference — and what moving small, targeted compute toward the data changes.</p>
-    </div>
+    <a class="card" href="results.html">
+      <div class="card-meta">Part II · in progress · patent pending</div>
+      <div class="card-title">Compute at the memory boundary <span class="arw">&#8594;</span></div>
+      <div class="card-sub">The near-memory argument, with early results and a roadmap.</div>
+      <p class="card-desc">Why data movement, not arithmetic, sets the limit for inference — and what completing the reduction on the memory side, gating there, and returning only survivors buys you. Near-memory distributed reduction with in-situ output gating; a U.S. provisional filed August 2026. Includes an energy model, a bit-exact tile, and the lossless→lossy gate sweep.</p>
+    </a>
+  </div>
+
+  <div class="sec">Build &amp; code</div>
+  <div class="list">
+    <a class="card" href="results.html">
+      <div class="card-meta">Results · roadmap</div>
+      <div class="card-title">Early results &amp; roadmap <span class="arw">&#8594;</span></div>
+      <p class="card-desc">The energy wins (locality, decode movement share), the gate threshold sweep, and a DONE / NEXT roadmap from thesis to a synthesized tile.</p>
+    </a>
+
+    <a class="card" href="https://github.com/jimchakra/AI/blob/main/inference_energy_sim.py" target="_blank" rel="noopener">
+      <div class="card-meta">Python · model</div>
+      <div class="card-title">Inference energy model <span class="arw">&#8594;</span></div>
+      <p class="card-desc">A first-order compute-vs-data-movement and $/token model, with an honest array-access / transport split — showing why memory-bound decode is &gt;90% data movement and where near-memory pays off.</p>
+    </a>
+
+    <a class="card" href="https://github.com/jimchakra/AI/tree/main/nmgr" target="_blank" rel="noopener">
+      <div class="card-meta">Hardware · demonstrator</div>
+      <div class="card-title">Near-memory tile (NMGR) <span class="arw">&#8594;</span></div>
+      <p class="card-desc">Microarchitecture spec, a bit-exact golden reference, and test vectors for a near-memory gated-reduction datapath — the contract layer feeding RTL, synthesis, and $/token.</p>
+    </a>
   </div>
 
   <div class="foot">

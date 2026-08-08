@@ -1,0 +1,30 @@
+# Near-memory gated-reduction tile -- microarchitecture parameters
+# Single source of truth: this file drives the golden model, the RTL
+# testbench, and the energy/cost scale-up. Change it in one place.
+name: nmgr_tile_v1
+
+# --- problem shape (one output tile) ---------------------------------------
+banks:        4      # memory banks feeding the tile; each holds a K-slice
+tile_m:       64     # output activations produced per tile pass
+k_per_bank:   32     # input elements per bank contributing to each output
+                     #   full contraction K = banks * k_per_bank = 128
+
+# --- numerics --------------------------------------------------------------
+x_bits:       8      # activation precision (signed two's complement)
+w_bits:       4      # weight precision (signed two's complement)
+acc_bits:     32     # cross-bank reduction accumulator width
+out_shift:    8      # requantize: relu(acc) >> out_shift  (acc -> out_bits scale)
+out_bits:     8      # returned survivor precision (signed, saturating)
+
+# --- in-situ activation gate (evaluated on the memory side) ----------------
+gate:         relu   # relu | threshold
+threshold:    0      # post-activation value <= threshold  ->  gated to zero
+
+# --- physical / mapping (consumed later by synthesis + energy model) -------
+clk_mhz:               1000
+macs_per_cycle_per_pe: 1
+pe_count:              64     # one PE per output lane (tile_m)
+
+# --- stimulus --------------------------------------------------------------
+seed:         20260808
+vectors:      16     # independent activation vectors (decode tokens) to test

@@ -1,0 +1,25 @@
+{
+  "config": {
+    "name": "nmgr_tile_v1",
+    "banks": 4,
+    "tile_m": 64,
+    "k_per_bank": 32,
+    "x_bits": 8,
+    "w_bits": 4,
+    "acc_bits": 32,
+    "out_shift": 8,
+    "out_bits": 8,
+    "gate": "relu",
+    "threshold": 0,
+    "clk_mhz": 1000,
+    "macs_per_cycle_per_pe": 1,
+    "pe_count": 64,
+    "seed": 20260808,
+    "vectors": 16
+  },
+  "contraction_K": 128,
+  "macs_per_tile": 8192,
+  "mean_sparsity": 0.541015625,
+  "mean_compression": 0.583984375,
+  "mean_survivors": 29.375
+}
