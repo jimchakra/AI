@@ -99,7 +99,7 @@
  <p>SystemC (~MHz) + ISS (near real-time) are the <strong>digital twin</strong> of future silicon+FW — RTL simulation is bit-true but 10⁴–10⁵× too slow to develop real firmware against. The architect owns the twin as a living spec: any RTL divergence is a bug in RTL, not the spec.</p>
 
  <h2><span class="n">Part 3</span> &nbsp;Where AI fits</h2>
- <p>The single-source fan-out is exactly the "code-like" work an AI assistant accelerates: one machine-readable spec generating RTL parameters, FW headers, DV config, and test scaffolding. The methodology is <em>native</em> to AI-assisted generation — but the value is the harness around it. A bit-exact golden reference, lint, exhaustive simulation, and logic-equivalence are what make generated output trustworthy; AI multiplies throughput on the generation, gated by that harness.</p>
+ <p>The single-source fan-out is exactly the "code-like" work an AI assistant accelerates: one YAML micro-arch spec generating RTL parameters, FW headers, DV config, and test scaffolding. The methodology is <em>native</em> to AI-assisted generation — but the value is the harness around it. A bit-exact golden reference, lint, exhaustive simulation, and logic-equivalence are what make generated output trustworthy; AI multiplies throughput on the generation, gated by that harness.</p>
 
  <div class="note"><strong>This is real, at two scales — with numbers.</strong>
  On a ~200-core 6G RU/DU SoC (TSMC&nbsp;N3E), the contention model inverted the
