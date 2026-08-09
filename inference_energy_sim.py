@@ -312,6 +312,65 @@ def save_plot(m: ModelSpec, path: str = "energy_breakdown.png") -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Link framing overhead  (mirrors the RTL packetizer, rtl/nmgr_packetizer.v)   #
+# --------------------------------------------------------------------------- #
+# The compressed return is not free on the wire: each tile packet carries a
+# fixed header + a survivor bitmap, then the packed survivors. This models the
+# effective bytes actually crossing the SerDes/CXL link, so "return only
+# survivors" is costed honestly against the fixed framing overhead.
+
+def link_bytes(count, M=64, ow_bytes=1, flit_bytes=4):
+    """Effective link bytes for one tile packet (header + bitmap + survivors),
+    flit-granular, exactly as nmgr_packetizer frames it."""
+    header  = flit_bytes                                   # 1 flit
+    bitmap  = ((M + 8*flit_bytes - 1) // (8*flit_bytes)) * flit_bytes   # ceil(M bits / flit)
+    lanes   = flit_bytes // ow_bytes
+    payload = ((count + lanes - 1) // lanes) * flit_bytes  # packed, flit-granular
+    return dict(header=header, bitmap=bitmap, payload=payload,
+                total=header+bitmap+payload)
+
+def framing_table(M=64, ow_bytes=1, flit_bytes=4):
+    """Effective bytes vs a dense M-element return, across survivor counts."""
+    dense = M * ow_bytes
+    rows = []
+    for count in (M, 32, 13, 8, 3, 0):
+        lb = link_bytes(count, M, ow_bytes, flit_bytes)
+        overhead = lb["header"] + lb["bitmap"]
+        rows.append(dict(count=count, sparsity=1.0-count/M, **lb,
+                         dense=dense, vs_dense=lb["total"]/dense,
+                         overhead_frac=overhead/lb["total"]))
+    return rows
+
+def dollars_per_mtok(energy_pj_per_token, price_kwh=0.10, pue=1.3):
+    """First-order electricity cost of the MODELED data-movement+compute energy
+    for 1M tokens. This is the physics floor the near-memory locality attacks —
+    NOT full system $/token (which also carries idle draw, host, networking)."""
+    joules = energy_pj_per_token * 1e-12 * 1e6      # J per 1M tokens
+    kwh = joules / 3.6e6
+    return kwh * price_kwh * pue
+
+def print_dollars(m, price_kwh=0.10, pue=1.3):
+    a, b, c = conventional(m), near_memory(m), near_memory_gated(m)
+    print(f"\nModeled energy cost per 1M tokens  (electricity ${price_kwh}/kWh, PUE {pue}, {m.mem.upper()} baseline):")
+    print(f"  {'scenario':22s} {'energy/token':>13} {'$/1M tokens':>13}")
+    for lab, bd in (("conventional", a), ("near-memory", b), ("near-memory+gated", c)):
+        e = bd.total
+        print(f"  {lab:22s} {e/1e9:10.2f} mJ {dollars_per_mtok(e):12.4f}")
+    print(f"  -> near-memory cuts the modeled movement-energy bill "
+          f"{a.total/b.total:.1f}x vs {m.mem.upper()}.")
+    print("  (Floor on the data path only; not a full-system $/token — those carry host/idle/network.)")
+
+def print_framing(M=64):
+    print("\nLink framing overhead (compressed return, M=%d, 8-bit survivors, 32-bit flits):" % M)
+    print(f"{'survivors':>9} {'spars%':>7} {'hdr+bmp':>8} {'payload':>8} {'link B':>7} {'vs dense':>9} {'overhead%':>10}")
+    for r in framing_table(M):
+        print(f"{r['count']:9d} {100*r['sparsity']:7.0f} {r['header']+r['bitmap']:8d} "
+              f"{r['payload']:8d} {r['total']:7d} {r['vs_dense']:8.2f}x {100*r['overhead_frac']:9.0f}%")
+    print("Fixed 12 B overhead per tile packet (4 B header + 8 B bitmap); amortized when")
+    print("survivors are many, dominant when few — the honest floor on compressed return.")
+
+
+# --------------------------------------------------------------------------- #
 # CLI                                                                          #
 # --------------------------------------------------------------------------- #
 
@@ -331,6 +390,10 @@ def build_argparser() -> argparse.ArgumentParser:
     p.add_argument("--mem", choices=list(IO_PJB), default="hbm",
                    help="conventional baseline memory (hbm | dram)")
     p.add_argument("--plot", action="store_true", help="save energy_breakdown.png")
+    p.add_argument("--dollars", action="store_true",
+                   help="print modeled $/1M-token (electricity floor) per scenario")
+    p.add_argument("--framing", action="store_true",
+                   help="show link framing overhead (effective bytes vs dense return)")
     return p
 
 
@@ -342,6 +405,10 @@ def main(argv: list[str] | None = None) -> None:
         act_sparsity=args.sparsity, mem=args.mem,
     )
     print_report(m)
+    if args.dollars:
+        print_dollars(m)
+    if args.framing:
+        print_framing()
     if args.plot:
         save_plot(m)
 

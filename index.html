@@ -52,6 +52,13 @@
 
   <div class="sec">Writing</div>
   <div class="list">
+    <a class="card" href="study.html">
+      <div class="card-meta">Silicon Study · interactive · patent pending</div>
+      <div class="card-title">Compute at the Memory Boundary — the full study <span class="arw">&#8594;</span></div>
+      <div class="card-sub">Thesis → filed patent → verified RTL → grounded synthesis → hardware-in-the-loop, on one page.</div>
+      <p class="card-desc">The whole argument end to end, in the style of a principal engineer's design notebook: Key Findings, the data-movement thesis with a live energy/$-per-token explorer, the lossless→lossy gate with a live θ knob (real-model co-sim), the datapath and its clock-domain crossing, the CI-backed verification signoff, grounded area, and a 64/64 bit-exact hardware-in-the-loop result.</p>
+    </a>
+
     <a class="card" href="small-frees-big.html">
       <div class="card-meta">August 2026 · Architecture</div>
       <div class="card-title">Small Frees Big <span class="arw">&#8594;</span></div>
@@ -85,7 +92,7 @@
     <a class="card" href="https://github.com/jimchakra/AI/blob/main/inference_energy_sim.py" target="_blank" rel="noopener">
       <div class="card-meta">Python · model</div>
       <div class="card-title">Inference energy model <span class="arw">&#8594;</span></div>
-      <p class="card-desc">A first-order compute-vs-data-movement and $/token model, with an honest array-access / transport split — showing why memory-bound decode is &gt;90% data movement and where near-memory pays off.</p>
+      <p class="card-desc">A first-order per-token energy and $/token model with an honest array-access vs. transport split — modeling weight and KV-cache bandwidth per token, precision scaling (INT8/INT4/FP4), a roofline ridge point, and activation-gating locality — showing why memory-bound decode is &gt;90% data movement and where near-memory pays off.</p>
     </a>
 
     <a class="card" href="https://github.com/jimchakra/AI/tree/main/nmgr" target="_blank" rel="noopener">

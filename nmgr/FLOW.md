@@ -17,13 +17,17 @@ Python/NumPy (golden reference).
 | Stage | Tool | What it proves | Status |
 |-------|------|----------------|--------|
 | **SSOT fan-out + check** | Python + `make check` | one YAML → RTL params / FW header / DV cfg; RTL defaults agree | ✅ consistency by construction — a hand-edit that drifts any artifact fails CI |
-| **Lint** | Verilator `--lint-only -Wall` | RTL style/width/UNUSED hygiene | ✅ clean, both modules |
+| **Lint** _(static)_ | Verilator `--lint-only -Wall` | RTL style/width/UNUSED hygiene | ✅ clean, all four modules (PE, encoder, packetizer, async FIFO) |
+| **CDC** _(static + dynamic)_ | async FIFO structure + dual-clock sim | memory-clk ↔ link-clk crossings safe | ✅ Gray-pointer async FIFO + 2-flop synchronizers (async_fifo.v); verified dual-clock in tb_packetizer. Formal CDC sign-off (SpyGlass/Questa CDC) is a commercial-tool step — same honest boundary as PE LEC. |
 | **Golden** | Python | bit-exact reference + θ sweep | ✅ |
 | **Simulation** | Icarus | RTL == golden on every vector | ✅ PE 1024/1024 · encoder 1510/1510 |
-| **Synthesis** | Yosys | maps to gates; complexity | ✅ PE ~1.36k cells+48 FF · enc ~530 cells |
+| **Packetizer / link-layer** | Icarus (dual-clock) | packet framing across the crossing | ✅ 6/6 vectors, async, with backpressure |
+| **Synthesis** | Yosys | maps to gates; complexity | ✅ PE ~1.36k cells+48 FF · enc ~530 cells · packetizer+FIFO ~3.06k cells |
 | **LEC** | Yosys `equiv_opt` | RTL == synthesized netlist (formal) | ✅ encoder proven (608/608 cells) |
-| **CDC** | — | clock-domain crossings safe | single-clock today; real crossing arrives with the packetizer (memory-clk ↔ link-clk) |
-| **Power** | — | switching-activity power | Stage-2: needs a PDK liberty (PrimeTime-PX-class) |
+| **Area** | Yosys + Nangate45 | grounded gate area | ✅ `make area`: PE 1.6k µm² · enc 5.1k · packetizer+CDC 10.3k (45 nm) → ~0.0003 mm² tile scaled to 5 nm (est.) |
+| **$/token** | energy model | movement-energy \$ floor | ✅ near-memory cuts modeled \$ / 1M-tok 3.5× (HBM) / 17.5× (off-pkg DRAM); floor on the data path, not full-system |
+| **HITL cosim** | iverilog + PyTorch | RTL runs a real FFN tile | ✅ `make cosim`: 64/64 bit-exact on a real transformer tile; dequant cosine 0.99 |
+| **Power (absolute)** | — | switching-activity power | needs a foundry PDK + PrimeTime-PX; area is grounded, absolute power is the remaining gap |
 
 ### Honest scope boundary on LEC
 Formal logic-equivalence of the **PE datapath does not close with open SAT
