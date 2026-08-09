@@ -17,11 +17,17 @@ heading.
   compute-vs-data-movement and $/token model (honest array-access / transport
   split). Run: `python3 inference_energy_sim.py` (`--mem dram`, `--prec fp4`, …).
 - **[`nmgr/`](nmgr/)** — near-memory gated-reduction tile demonstrator:
-  microarchitecture [spec](nmgr/spec/microarch.md), a bit-exact
-  [golden reference](nmgr/golden/golden.py), and test vectors.
-  Try the gate sweep: `python3 nmgr/golden/golden.py --sweep 0,1,2,3,5,8,12,20,32`
+  parameterized [spec](nmgr/spec/microarch.md), a bit-exact
+  [golden reference](nmgr/golden/golden.py) with a threshold sweep, and
+  **synthesizable RTL verified against it**:
+  - [`rtl/nmgr_pe.v`](nmgr/rtl/nmgr_pe.v) — compute core (MAC → cross-bank
+    reduction → requantize → gate). Bit-exact: 1024/1024 outputs vs golden.
+  - [`rtl/nmgr_encoder.v`](nmgr/rtl/nmgr_encoder.v) — compressed return
+    (bitmap + packed survivors). Bit-exact: 1510/1510 assertions vs golden.
+  - Reproduce: `cd nmgr && ./verify.sh` (needs `iverilog`, `python3` +
+    `numpy`/`pyyaml`; synthesis scripts under `syn/` use `yosys`).
 
 The core mechanism — near-memory distributed reduction with in-situ output
 gating and compressed return — is the subject of a U.S. provisional patent
-filed August 2026. Figures here are first-order models pending RTL synthesis and
+filed August 2026. Figures here are first-order models pending PDK synthesis and
 end-to-end accuracy evaluation.

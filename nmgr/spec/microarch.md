@@ -47,14 +47,16 @@ link.
 ## 3. Datapath / pipeline
 
 ```
- bank 0 ─┐  per-bank MAC   ┐
- bank 1 ─┤  (k_per_bank    │   cross-bank      ReLU +      threshold     bitmap +
- bank 2 ─┤   MACs/lane)    ├─► adder tree  ─► saturate ─►   gate     ─►  survivor
- bank 3 ─┘                 ┘   (acc_bits)                 (|y|≤θ→0)      encoder
+ bank 0 ─┐  base-die MAC   ┐
+ bank 1 ─┤  lanes (operands│   cross-bank      ReLU +      threshold     bitmap +
+ bank 2 ─┤  streamed per   ├─► adder tree  ─► saturate ─►   gate     ─►  survivor
+ bank 3 ─┘  bank)          ┘   (acc_bits)                 (|y|≤θ→0)      encoder
 ```
 
-- **PE array:** `pe_count` lanes (one per output `m`), each a `k_per_bank`-deep
-  MAC over its bank slice; `macs_per_cycle_per_pe` sets the fold.
+- **MAC lanes (on the base logic die):** `pe_count` lanes (one per output `m`).
+  Operands are *streamed up from each bank* over the short in-stack hop — there
+  is **no compute inside the DRAM banks**; all multiply / reduce / gate / encode
+  is on the base (aggregation) die.
 - **Reduction:** balanced adder tree across `banks`, `acc_bits` wide (checked
   for overflow by the golden).
 - **Gate:** ReLU → saturate to `out_bits` → threshold compare.
@@ -62,6 +64,30 @@ link.
 
 Parameters live in [`config/tile.yaml`](../config/tile.yaml) and drive the
 golden, the RTL, and the scale-up — one source of truth.
+
+## 3a. Physical mapping & host interface (design decisions)
+
+- **All compute lives on the base (aggregation) logic die.** Per-bank /
+  in-DRAM-die MAC is explicitly rejected: DRAM is a poor logic process (area,
+  speed, yield, thermal). MAC, cross-bank reduction, gate, and survivor encoding
+  all sit on the base logic die of the stack (or an equivalent memory-side
+  buffer / CXL controller). The banks only supply operands over the short
+  in-stack hop.
+- **The host interface is a packetized link, not a DDR-transparent burst.**
+  Gating + compression makes the return *variable-length and data-dependent*,
+  which DDR's fixed-burst, fixed-latency contract cannot carry. The base die is
+  therefore a protocol boundary: conventional fixed-burst upstream to the DRAM
+  array, and a framed, flow-controlled **packet link downstream to the host —
+  realized on SerDes (CXL / PCIe-class), not a DDR PHY.** The fixed-transfer PHY
+  (DDR, or HBM's parallel protocol) is **retired or demoted to a legacy
+  passthrough**; a *single* packetized link carries **both** ordinary load/store
+  and the variable compute returns, QoS-arbitrated. Tradeoff: framing +
+  serialization add latency to plain access — minimized when compute die and
+  memory are on-package (accelerator-attached HBM).
+- **Consequences to model:** variable completion latency (the host scheduler
+  must tolerate out-of-order, credited returns); per-packet framing overhead vs
+  a small survivor payload (batch survivors into right-sized packets); flow
+  control and ordering across the link.
 
 ## 4. Numerics (bit-exact contract)
 
@@ -111,12 +137,19 @@ version yields identical values. See [`golden/golden.py`](../golden/golden.py).
 |-------------------------------|-------|
 | Config / parameterization     | done  |
 | Golden reference + vectors    | done  |
-| RTL (Verilog)                 | next  |
-| Bit-exact testbench (Verilator) | next |
-| Synthesis (Yosys + open PDK)  | next  |
+| RTL (Verilog) — `rtl/nmgr_pe.v` | **done** |
+| Bit-exact testbench (Icarus) — `tb/tb_nmgr.sv` | **done — 1024/1024 outputs match golden (θ=0)** |
+| Synthesis complexity (Yosys) | **done — ~1,360 gate cells + 48 FF per PE** |
+| Survivor / compression encoder — `rtl/nmgr_encoder.v` | **done — 1510/1510 assertions match golden (bitmap + packed survivors)** |
+| Packetizer / link-layer framing + framing-overhead model (SerDes / CXL) | next |
+| Synthesis area/power on an open PDK (sky130 / Nangate45) | next |
 | Power + $/token scale-up      | next  |
 | Accuracy: perplexity/accuracy vs θ on a real model (Tier-3) | next |
 | PyTorch custom-op cosim (opt) | later |
+
+Run the check: `iverilog -g2012 -o /tmp/tb rtl/nmgr_pe.v tb/tb_nmgr.sv && vvp /tmp/tb`
+(after `python3 golden/golden.py` and concatenating the per-vector hex into
+`vectors/all_x.hex` and `vectors/all_expected.hex`).
 
 **Two validation axes, both needed for the full story:** (a) *PPA* — RTL →
 synthesis → area/power → $/token; (b) *Accuracy* — insert the gated-requant

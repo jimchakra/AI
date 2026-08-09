@@ -1,0 +1,5 @@
+read_verilog rtl/nmgr_encoder.v
+hierarchy -top nmgr_encoder
+synth -top nmgr_encoder -flatten
+abc -g simple
+stat

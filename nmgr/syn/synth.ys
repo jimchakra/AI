@@ -1,0 +1,5 @@
+read_verilog rtl/nmgr_pe.v
+hierarchy -top nmgr_pe
+synth -top nmgr_pe -flatten
+opt -full
+stat
