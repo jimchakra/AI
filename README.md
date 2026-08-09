@@ -1,5 +1,7 @@
 # AI inference architecture
 
+[![nmgr-verify](https://github.com/jimchakra/AI/actions/workflows/ci.yml/badge.svg)](https://github.com/jimchakra/AI/actions/workflows/ci.yml)
+
 Writing, working code, and early silicon results on real-time and memory-bound
 AI inference — from building baseband silicon, applied to where inference is
 heading.
@@ -24,8 +26,12 @@ heading.
     reduction → requantize → gate). Bit-exact: 1024/1024 outputs vs golden.
   - [`rtl/nmgr_encoder.v`](nmgr/rtl/nmgr_encoder.v) — compressed return
     (bitmap + packed survivors). Bit-exact: 1510/1510 assertions vs golden.
-  - Reproduce: `cd nmgr && ./verify.sh` (needs `iverilog`, `python3` +
-    `numpy`/`pyyaml`; synthesis scripts under `syn/` use `yosys`).
+  - **Flow:** `cd nmgr && make all` runs the full signoff flow — lint
+    (Verilator) → golden vectors → simulation → synthesis (Yosys) → logic
+    equivalence (Yosys `equiv_opt`) — and it runs in CI on every push. See
+    [`nmgr/FLOW.md`](nmgr/FLOW.md) for stage status and an honest
+    AI-assisted-flow effectiveness write-up. (`./verify.sh` runs just the two
+    bit-exact sims.)
 
 The core mechanism — near-memory distributed reduction with in-situ output
 gating and compressed return — is the subject of a U.S. provisional patent

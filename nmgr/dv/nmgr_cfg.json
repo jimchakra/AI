@@ -1,0 +1,13 @@
+{
+  "banks": 4,
+  "tile_m": 64,
+  "k_per_bank": 32,
+  "x_bits": 8,
+  "w_bits": 4,
+  "acc_bits": 32,
+  "out_shift": 8,
+  "out_bits": 8,
+  "threshold": 0,
+  "contraction_k": 128,
+  "_generated_from": "config/tile.yaml"
+}

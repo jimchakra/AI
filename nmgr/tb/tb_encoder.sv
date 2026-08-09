@@ -16,11 +16,13 @@ module tb_encoder;
     wire surv_valid; wire [OW-1:0] surv_val;
     wire [$clog2(M+1)-1:0] count;
     wire done;
+    reg  [$clog2(M)-1:0] rd_addr=0;
+    wire [OW-1:0] rd_data;
 
     nmgr_encoder #(M,OW) dut (
         .clk(clk),.rst(rst),.start(start),.in_valid(in_valid),.in_val(in_val),
         .bitmap(bitmap),.surv_valid(surv_valid),.surv_val(surv_val),
-        .count(count),.done(done));
+        .count(count),.done(done),.rd_addr(rd_addr),.rd_data(rd_data));
 
     always #5 clk=~clk;
 
@@ -58,9 +60,10 @@ module tb_encoder;
             end
             // 3) packed survivors vs golden non-zeros
             for (s=0;s<ref_cnt;s=s+1) begin
+                rd_addr = s[$clog2(M)-1:0]; #1;   // read payload via the port
                 checks=checks+1;
-                if (dut.surv_mem[s] !== ref_surv[s]) begin errors=errors+1;
-                    if (errors<=6) $display("SURV v=%0d s=%0d rtl=%0d ref=%0d",i,s,dut.surv_mem[s],ref_surv[s]); end
+                if (rd_data !== ref_surv[s]) begin errors=errors+1;
+                    if (errors<=6) $display("SURV v=%0d s=%0d rtl=%0d ref=%0d",i,s,rd_data,ref_surv[s]); end
             end
         end
 

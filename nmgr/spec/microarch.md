@@ -140,6 +140,7 @@ version yields identical values. See [`golden/golden.py`](../golden/golden.py).
 | RTL (Verilog) — `rtl/nmgr_pe.v` | **done** |
 | Bit-exact testbench (Icarus) — `tb/tb_nmgr.sv` | **done — 1024/1024 outputs match golden (θ=0)** |
 | Synthesis complexity (Yosys) | **done — ~1,360 gate cells + 48 FF per PE** |
+| Verification/signoff flow + CI (lint · sim · synth · LEC) — `Makefile`, `FLOW.md`, GitHub Actions | **done — `make all` green; encoder LEC proven (608/608)** |
 | Survivor / compression encoder — `rtl/nmgr_encoder.v` | **done — 1510/1510 assertions match golden (bitmap + packed survivors)** |
 | Packetizer / link-layer framing + framing-overhead model (SerDes / CXL) | next |
 | Synthesis area/power on an open PDK (sky130 / Nangate45) | next |

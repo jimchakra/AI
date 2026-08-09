@@ -22,13 +22,17 @@ module nmgr_encoder #(
     output reg               surv_valid, // survivor emitted this cycle (stream)
     output reg  [OW-1:0]        surv_val,   // the survivor value        (stream)
     output reg  [$clog2(M+1)-1:0] count,    // number of survivors so far
-    output reg                  done        // pulses after the last lane
+    output reg                  done,       // pulses after the last lane
+    input  wire [$clog2(M)-1:0]  rd_addr,   // read the assembled payload...
+    output wire [OW-1:0]         rd_data    // ...survivor value at rd_addr
 );
     localparam IW = $clog2(M+1);
+    localparam AW = $clog2(M);
 
-    // assembled survivor payload (the packet body)
+    // assembled survivor payload (the packet body); read via rd_addr/rd_data
     reg [OW-1:0] surv_mem [0:M-1];
     reg [IW-1:0] idx;
+    assign rd_data = surv_mem[rd_addr];
 
     always @(posedge clk) begin
         if (rst) begin
@@ -39,9 +43,9 @@ module nmgr_encoder #(
             if (start) begin
                 bitmap <= 0; idx <= 0; count <= 0;
             end else if (in_valid) begin
-                bitmap[idx] <= (in_val != 0);
+                bitmap[idx[AW-1:0]] <= (in_val != 0);
                 if (in_val != 0) begin
-                    surv_mem[count] <= in_val;   // pack into payload
+                    surv_mem[count[AW-1:0]] <= in_val;   // pack into payload
                     surv_val   <= in_val;        // and emit on the stream
                     surv_valid <= 1'b1;
                     count      <= count + 1'b1;

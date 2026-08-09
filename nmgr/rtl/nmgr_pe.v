@@ -37,19 +37,14 @@ module nmgr_pe #(
             psum = psum + $signed(x_k[b*XW +: XW]) * $signed(w_k[b*WW +: WW]);
     end
 
-    // relu -> requant -> saturate -> gate  (matches the golden exactly)
-    localparam signed [OW-1:0] OMAX = (1 <<< (OW-1)) - 1;   // 127 for OW=8
-    function [OW-1:0] gate_requant;
-        input signed [ACCW-1:0] a;
-        reg [ACCW-1:0] r, shifted;
-        reg [OW-1:0]   sat;
-        begin
-            r       = (a < 0) ? 0 : a;              // relu
-            shifted = r >> OSHIFT;                  // requantize (r >= 0)
-            sat     = (shifted > OMAX) ? OMAX : shifted[OW-1:0];
-            gate_requant = (sat > threshold) ? sat : {OW{1'b0}};
-        end
-    endfunction
+    // relu -> requant (>> OSHIFT) -> saturate to [0, OMAX] -> threshold gate.
+    // Combinational; matches the golden exactly. Sampled into y at finalize.
+    localparam [OW-1:0] OMAX = (1 << (OW-1)) - 1;                 // 127 for OW=8
+    wire [ACCW-1:0] relu_v  = acc[ACCW-1] ? {ACCW{1'b0}} : $unsigned(acc);
+    wire [ACCW-1:0] shifted = relu_v >> OSHIFT;
+    wire            ovf     = |shifted[ACCW-1:OW-1];             // value > OMAX
+    wire [OW-1:0]   sat_v   = ovf ? OMAX : {1'b0, shifted[OW-2:0]};
+    wire [OW-1:0]   gated_v = (sat_v > threshold) ? sat_v : {OW{1'b0}};
 
     reg signed [ACCW-1:0] acc;
     reg        [CW-1:0]   cnt;
@@ -66,7 +61,7 @@ module nmgr_pe #(
                 running <= 1'b1;
             end else if (running) begin
                 if (cnt == KPB) begin
-                    y       <= gate_requant(acc);   // full sum complete
+                    y       <= gated_v;             // full sum complete
                     done    <= 1'b1;
                     running <= 1'b0;
                 end else begin

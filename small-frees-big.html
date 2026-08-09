@@ -235,6 +235,8 @@
 
   <p>The organizing principle across all of it is simple to state and hard to do well: <strong>small, targeted compute close to the work frees the big engine to do only what differentiates.</strong> You don&rsquo;t ask the throughput engine to spend its cycles on fixed-function housekeeping it will always be mediocre at; you spin out a cheap, specialized unit for that, and you let the expensive engine concentrate on the part that actually needs its generality. Wrapping it all is a <strong>QoS-aware scheduler</strong> that dispatches by deadline and priority &mdash; latency-critical first, throughput next, background last &mdash; so the tiers never fight over the same cycles at the wrong moment.</p>
 
+  <p>The economics are stark when you measure them. In my own RAN architecture work, a fixed-function LDPC decode engine comes in around <strong>0.1&nbsp;mm² at 5&nbsp;nm</strong>, against roughly <strong>1.5&nbsp;mm² and 5&ndash;10&nbsp;W</strong> for a general GPU streaming-multiprocessor doing the same decode &mdash; and the small unit is <em>16&times;</em> faster on the task than software on the big engine. That is &ldquo;small frees big&rdquo; not as a slogan but as an area-and-power line item. (Worked through, with the contention and priority-inversion analysis behind it, in the <a href="https://jimchakra.github.io/6G-NTN/6g_du_rd_ai.html">6G RU/DU silicon study</a>.)</p>
+
   <p>None of that was designed for AI. But look at where inference silicon is going.</p>
 
   <h2>The same shape, in AI inference</h2>
