@@ -1,0 +1,23 @@
+name: nmgr-verify
+
+on:
+  push:
+    paths: [ 'nmgr/**', '.github/workflows/ci.yml' ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install open-source EDA tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog verilator yosys python3-pip
+          pip3 install --quiet numpy pyyaml
+
+      - name: Run flow (lint + sim + synth + LEC)
+        working-directory: nmgr
+        run: make all
