@@ -1,0 +1,456 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NACK, don't hang — graceful degradation under a hard deadline</title>
+<meta name="description" content="A modem principle applied to AI inference: you cannot meet a hard deadline by over-provisioning against an unbounded worst case. Detect the miss early and emit a bounded-loss fallback (a NACK) instead of hanging. Two live simulations — token-deadline anytime KV degradation, and serving-level admission control vs congestion collapse.">
+<style>
+ :root{--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+   --serif:Georgia,"Iowan Old Style",Charter,serif;
+   --ink:#2f3e50;--body:#33404d;--muted:#6a757f;--faint:#93a1b0;--rule:#e4e9ee;
+   --zone:#eef3f8;--accent:#43648f;--ok:#2e7d5b;--warn:#8a5a1a;--bad:#b0392f;--page:#fff;
+   --c1:#4c6f9c;--c2:#3c597f;--c3:#88a4c6;--c4:#aec1d6;}
+ *{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--body);font-family:var(--sans);line-height:1.58;font-size:15.5px}
+ .wrap{max-width:1000px;margin:0 auto;padding:52px 24px 96px}
+ .eyebrow{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:1.5px;margin:0 0 12px}
+ h1{font-family:var(--serif);font-size:32px;color:var(--ink);margin:0 0 12px;letter-spacing:-.4px;line-height:1.15}
+ .dek{font-family:var(--serif);color:#586470;font-size:18px;line-height:1.5;margin:0 0 18px;max-width:74ch}
+ .nav{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 6px}
+ .nav a{font-size:13px;color:var(--accent);text-decoration:none;border:1px solid #cdd8e2;border-radius:20px;padding:5px 13px}
+ .nav a:hover{background:var(--zone)}
+ .pill{font-size:11px;font-weight:700;letter-spacing:.6px;color:#fff;background:linear-gradient(160deg,#4c6f9c,#3c597f);border-radius:20px;padding:6px 13px}
+ h2{font-size:12px;letter-spacing:1.6px;text-transform:uppercase;color:var(--faint);margin:52px 0 8px;padding-bottom:8px;border-bottom:1px solid var(--rule)}
+ h2 .n{color:var(--accent);font-weight:700;margin-right:8px}
+ h3{font-size:17px;color:var(--ink);margin:22px 0 6px;font-family:var(--serif)}
+ p{margin:0 0 14px;max-width:76ch} .lead{font-size:16.5px}
+ a.inl{color:var(--accent);text-decoration:none;border-bottom:1px solid #cdd8e2}
+ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:#eef1f4;padding:1px 5px;border-radius:4px}
+ .finds{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin:14px 0}
+ .fc{border:1px solid var(--rule);border-radius:14px;padding:16px 18px;background:#fff}
+ .fc .fn{font-size:10.5px;font-weight:700;letter-spacing:1px;color:var(--accent);margin-bottom:8px}
+ .fc .big{font-size:27px;font-weight:700;color:var(--ink);letter-spacing:-.5px;line-height:1}
+ .fc .lab{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.45}
+ .exp{border:1px solid #d7e0ea;border-radius:16px;padding:20px 22px;background:linear-gradient(180deg,#fbfcfe,#f3f7fb);margin:16px 0}
+ .exp h4{margin:0 0 3px;font-size:15px;color:var(--ink)} .exp .sub{font-size:12.5px;color:var(--muted);margin:0 0 14px}
+ .ctrls{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+ .ctl{display:flex;flex-direction:column;gap:5px} .ctl label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--faint)}
+ .ctl .val{font-size:12.5px;color:var(--accent);font-weight:600}
+ input[type=range]{width:190px;accent-color:var(--accent)}
+ .rd{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-top:14px}
+ .stat{background:#fff;border:1px solid var(--rule);border-radius:10px;padding:11px 13px}
+ .stat .v{font-size:21px;font-weight:700;color:var(--ink);letter-spacing:-.3px} .stat .k{font-size:11px;color:var(--muted);margin-top:2px}
+ .stat.good .v{color:var(--ok)} .stat.warn .v{color:var(--warn)} .stat.bad .v{color:var(--bad)}
+ canvas{width:100%;height:auto;display:block;background:#fff;border:1px solid var(--rule);border-radius:10px;margin-top:6px}
+ .cvcap{font-size:11.5px;color:var(--muted);margin:6px 2px 0}
+ table{border-collapse:collapse;width:100%;font-size:13px;margin:8px 0} th,td{text-align:right;padding:6px 9px;border-bottom:1px solid var(--rule)}
+ th:first-child,td:first-child{text-align:left} th{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+ .ok{color:var(--ok);font-weight:600} .lossy{color:var(--warn)} .bad{color:var(--bad);font-weight:600}
+ .note{background:var(--zone);border:1px solid #dde6ef;border-radius:12px;padding:14px 18px;font-size:13.5px;color:#42525f;margin:16px 0}
+ .foot{margin-top:52px;padding-top:20px;border-top:1px solid var(--rule);color:var(--faint);font-size:12.5px;line-height:1.7}
+ .foot a{color:var(--accent);text-decoration:none;border-bottom:1px solid #cdd8e2}
+ @media(max-width:720px){h1{font-size:26px}}
+</style></head><body><main class="wrap">
+
+ <p class="eyebrow">AI Inference Architecture · Real-Time Systems</p>
+ <h1>NACK, don&rsquo;t hang</h1>
+ <p class="dek">A hard-real-time principle from the modem, applied to AI inference: you cannot meet a deadline by over-provisioning against an unbounded worst case &mdash; and that worst case lives in the shared control plane, not the arithmetic. Detect the impending miss <em>early</em> and emit a cheap, bounded-loss fallback the system is built to absorb &mdash; a NACK &mdash; instead of blocking into a cascading stall. Two knobs below are live simulations of exactly this trade.</p>
+ <div class="nav">
+   <a href="study.html">&larr; Memory-boundary study</a>
+   <a href="results.html">Results</a>
+   <a href="kv-selector-spec.html">KV-selector spec</a>
+   <a href="https://github.com/jimchakra/AI" target="_blank" rel="noopener">GitHub &#8599;</a>
+ </div>
+
+ <div class="finds">
+   <div class="fc"><div class="fn">THE WALL</div><div class="big">P99 &rarr; P100</div><div class="lab">is unprovisionable &mdash; but <em>not</em> in the datapath. It&rsquo;s the <strong>control plane</strong>: cache misses, IRQ, multi-core contention in the modem; co-tenant &amp; scheduler jitter in inference. The compute is sized; the <em>sharing</em> is not.</div></div>
+   <div class="fc"><div class="fn">LAYER 1 · TOKEN</div><div class="big">99% on-time</div><div class="lab">vs <strong>19%</strong> for a rigid decoder at long context &mdash; bought with a mean <strong>~4.5%</strong> per-token quality cost, read straight off the measured Quest curve.</div></div>
+   <div class="fc"><div class="fn">LAYER 2 · SERVING</div><div class="big">~86 req/s</div><div class="lab">held <strong>flat</strong> under overload by admission control, where a rigid queue collapses to a handful of req/s in a retry storm &mdash; a <strong>20&ndash;40&times;</strong> goodput gap (live below).</div></div>
+   <div class="fc"><div class="fn">THE MOVE</div><div class="big">NACK &ne; hang</div><div class="lab">Both layers are the same pattern: predict the miss, emit a known-safe degraded output, keep the system live. A small deterministic loss beats an unbounded one.</div></div>
+ </div>
+
+ <h2><span class="n">01</span>The principle — from HARQ to inference</h2>
+ <p class="lead">In a modem there is a hard subframe deadline to return feedback to the gNB. Here is the subtlety outsiders miss: the PHY <em>datapath</em> is not the risk &mdash; it is provisioned, by construction, to decode the worst tolerated channel within a fixed timeline (worst-case channel estimation, equalization, and FEC are all inside the budget). What is unbounded is the <strong>control plane</strong>. A modern modem runs L2 (MAC/RLC/PDCP), RRC, and PHY control across a multi-core complex, and those tasks contend for shared compute: a burst of cache misses, an interrupt storm, bus contention, or several tasks colliding on one core can stretch a control task&rsquo;s execution time with no warning. When such a task will miss its slot, a robust design does not block waiting for it &mdash; it emits a bounded-loss fallback (a <strong>NACK</strong>, costing one HARQ retransmission) that the protocol is built to absorb. The alternative &mdash; hanging &mdash; times out up the stack into RLC retransmission, then RRC re-establishment, then a dropped call. A small, deterministic loss replaces an unbounded, cascading one. <strong>The uncertainty is never in the arithmetic; it originates in the shared compute resource</strong> &mdash; cache, bus, IRQ, scheduling. That is exactly the shape of the problem in AI inference serving, at two very different time scales.</p>
+
+ <div class="bars" style="display:block">
+ <table>
+   <tr><th>Property</th><th style="text-align:left">Modem (HARQ)</th><th style="text-align:left">Inference — the two layers below</th></tr>
+   <tr><td>Hard deadline</td><td style="text-align:left">Subframe timing to feed the gNB</td><td style="text-align:left">Per-token deadline (real-time stream) · TTFT SLO (serving)</td></tr>
+   <tr><td>Bounded <em>by design</em></td><td style="text-align:left">PHY datapath vs the worst tolerated channel</td><td style="text-align:left">Model FLOPs &amp; KV read at the provisioned max context</td></tr>
+   <tr><td>Why P100 fails</td><td style="text-align:left"><strong>Control plane</strong>: cache misses, IRQ, bus &amp; multi-core contention</td><td style="text-align:left"><strong>Shared resources</strong>: co-tenant / memory-BW contention, scheduler &amp; host stalls, straggler ranks</td></tr>
+   <tr><td>Detect early</td><td style="text-align:left">Predict the control task will miss its slot</td><td style="text-align:left">Predict token/req time from contention signals + queue depth</td></tr>
+   <tr><td><strong>The NACK</strong></td><td style="text-align:left">Cheap, protocol-legal, 1 retransmit</td><td style="text-align:left"><strong>Trim KV budget &rarr; on-time token</strong> · <strong>shed with 503 + backoff</strong></td></tr>
+   <tr><td>The hang</td><td style="text-align:left">Stall &rarr; RLC/RRC &rarr; dropped call</td><td style="text-align:left">Playout underrun &rarr; stream freezes · unbounded queue &rarr; congestion collapse</td></tr>
+ </table>
+ </div>
+
+ <!-- ================= LAYER 1 ================= -->
+ <h2><span class="n">02</span>Layer 1 — token-deadline anytime KV degradation</h2>
+ <p class="lead">A streaming decoder (voice, live translation, an agent in a control loop) owes one token every <code>D</code> ms. The <em>deterministic</em> part of a token&rsquo;s cost &mdash; compute plus the KV read at the current context &mdash; is provisionable, exactly like the modem PHY sized for the worst channel. What actually causes misses is the <strong>contention tail</strong>: co-tenant memory-bandwidth pressure, a kernel-launch or scheduler stall, a straggler rank in a tensor-parallel group. At short context there is slack to absorb those spikes; as context grows the deterministic baseline eats the slack, so the <em>same</em> contention spike begins tipping tokens over <code>D</code>. A <strong>rigid</strong> decoder rides it out and accumulates lag until the stream freezes. A <strong>robust</strong> decoder predicts the overrun and trims the KV budget to reclaim slack &mdash; emitting a slightly worse token <em>on time</em>. That degraded token is the NACK, and its quality cost is the <a class="inl" href="study.html">measured Quest curve</a> (budget &rarr; &Delta;ppl), not a guess.</p>
+
+ <div class="exp" id="l1">
+   <h4>Explorer — one real-time decode stream</h4>
+   <p class="sub">Fixed compute 8&nbsp;ms/token; KV read 0.012&nbsp;ms per token-of-context at full budget; degrade levels &amp; quality from the M4 Quest run (Qwen2.5-1.5B).</p>
+   <div class="ctrls">
+     <div class="ctl"><label>Target rate <span class="val" id="l1_rate_v">50 tok/s</span></label><input type="range" id="l1_rate" min="20" max="120" step="5" value="50"><label style="text-transform:none;color:var(--muted)">deadline D = <span id="l1_D">20.0</span> ms</label></div>
+     <div class="ctl"><label>Context (marker) <span class="val" id="l1_ctx_v">3000</span></label><input type="range" id="l1_ctx" min="500" max="6000" step="250" value="3000"></div>
+     <div class="ctl"><label>Contention (jitter) <span class="val" id="l1_jit_v">0.60</span></label><input type="range" id="l1_jit" min="0" max="1" step="0.05" value="0.6"></div>
+     <div class="ctl"><label>Controller guard <span class="val" id="l1_g_v">0.15</span></label><input type="range" id="l1_g" min="0" max="0.4" step="0.05" value="0.15"></div>
+   </div>
+   <canvas id="l1_sweep" width="1300" height="440"></canvas>
+   <p class="cvcap">Deadline-hit rate vs context length. <span style="color:#b0392f">Rigid (red)</span> falls off the wall; <span style="color:#2e7d5b">robust (green)</span> holds ~99% by paying the <span style="color:#2e7d5b">quality cost (green dashed, right axis)</span>. Vertical marker = the context set above.</p>
+   <canvas id="l1_time" width="1300" height="300"></canvas>
+   <p class="cvcap">Per-token latency at the marker context (first 220 tokens). Points above the <span style="color:#8a5a1a">dashed deadline</span> are misses; <span style="color:#b0392f">rigid</span> lives above it, <span style="color:#2e7d5b">robust</span> hugs just under.</p>
+   <div class="rd">
+     <div class="stat bad"><div class="v" id="l1_rh">–</div><div class="k">rigid deadline-hit</div></div>
+     <div class="stat bad"><div class="v" id="l1_rs">–</div><div class="k">rigid cumulative stall</div></div>
+     <div class="stat good"><div class="v" id="l1_bh">–</div><div class="k">robust deadline-hit</div></div>
+     <div class="stat good"><div class="v" id="l1_bq">–</div><div class="k">robust quality cost</div></div>
+     <div class="stat"><div class="v" id="l1_bb">–</div><div class="k">worst budget it fell to</div></div>
+   </div>
+ </div>
+ <div class="note"><strong>Read it like a control-task time budget, not a link budget.</strong> Below the wall the two policies are identical &mdash; there is enough slack to absorb contention, so no NACKs are needed and quality cost is zero. As context erodes the slack (or contention climbs), the rigid decoder&rsquo;s on-time rate collapses and lag runs to tens of seconds (a frozen stream). The robust decoder converts that cliff into a <em>gentle slope</em>: it reclaims slack by reading less KV, paying a bounded per-token &Delta;ppl and staying on time. The deepest fallback, if even the smallest budget won&rsquo;t fit (extreme contention), is to emit a hold/duplicate token &mdash; a true erasure, the exact analog of DTX/blanking when even a NACK can&rsquo;t make timing.</div>
+
+ <!-- ================= LAYER 2 ================= -->
+ <h2><span class="n">03</span>Layer 2 — serving-side admission control vs congestion collapse</h2>
+ <p class="lead">Now the deadline is a TTFT <strong>SLO</strong> and the tail is <em>bursty arrivals</em>. A single server (100&nbsp;req/s capacity) faces load that spikes above capacity. A <strong>rigid</strong> server queues everything: under overload, latency explodes, every request misses the SLO, and timed-out clients <em>retry</em> &mdash; a storm that drives ~100% utilization doing ~0 useful work (congestion collapse). A <strong>robust</strong> server runs admission control: if the predicted wait exceeds the SLO, it rejects immediately with <code>503 + backoff</code> &mdash; a NACK &mdash; so admitted work meets the SLO and goodput stays high. The rejected request is cheap and recoverable; the hung queue is not.</p>
+
+ <div class="exp" id="l2">
+   <h4>Explorer — a request queue under burst</h4>
+   <p class="sub">Single server, capacity 100&nbsp;req/s (mean service 10&nbsp;ms, CoV 0.35). Goodput = requests answered <em>within</em> the SLO. Curves averaged over 3 seeds.</p>
+   <div class="ctrls">
+     <div class="ctl"><label>SLO (TTFT) <span class="val" id="l2_slo_v">100 ms</span></label><input type="range" id="l2_slo" min="40" max="200" step="10" value="100"></div>
+     <div class="ctl"><label>Burstiness <span class="val" id="l2_b_v">0.50</span></label><input type="range" id="l2_b" min="0" max="1" step="0.05" value="0.5"></div>
+     <div class="ctl"><label>Retry fraction <span class="val" id="l2_r_v">0.60</span></label><input type="range" id="l2_r" min="0" max="1" step="0.05" value="0.6"></div>
+   </div>
+   <canvas id="l2_sweep" width="1300" height="460"></canvas>
+   <p class="cvcap">Useful goodput vs offered load &rho;. <span style="color:#b0392f">Rigid (red)</span> rises then collapses past &rho;&asymp;1 as the retry storm takes hold; <span style="color:#2e7d5b">robust (green)</span> plateaus &mdash; excess is shed (<span style="color:#2e7d5b">green dashed = shed %, right axis</span>). A NACK is a controlled loss; the collapse is not.</p>
+   <div class="rd">
+     <div class="stat"><div class="v" id="l2_peak">–</div><div class="k">robust goodput plateau</div></div>
+     <div class="stat bad"><div class="v" id="l2_coll">–</div><div class="k">rigid goodput @ &rho;=1.6</div></div>
+     <div class="stat good"><div class="v" id="l2_gain">–</div><div class="k">goodput advantage @ overload</div></div>
+     <div class="stat"><div class="v" id="l2_shed">–</div><div class="k">shed rate @ &rho;=1.6</div></div>
+   </div>
+ </div>
+ <div class="note"><strong>The retry storm is the point.</strong> Turn retry fraction up and watch the rigid curve fall <em>toward zero</em> rather than levelling off: a server that neither finishes work in time nor refuses it converts every client timeout into more load. Shedding breaks that loop &mdash; the same reason a modem NACKs early instead of letting a receive buffer back-pressure the whole pipeline. Tightening the SLO lowers the achievable plateau (less slack to absorb variance), which is the honest cost: admission control doesn&rsquo;t create capacity, it protects the capacity you have.</div>
+
+ <h2><span class="n">04</span>The throughput payoff — capacity vs the tail guarantee</h2>
+ <p class="lead">First, the honest ordering, because it is easy to misread this as advocating a shaky system with a panic button. It is the opposite. The way you make a tight deadline safe is <strong>mixed-criticality partitioning</strong>: tight-deadline tasks get <em>guaranteed resources</em> &mdash; many tiny cores with SRAM scratchpad, no cache, no contention, so their worst-case execution time is deterministic by construction &mdash; while large throughput jobs run on powerful shared cores where timing uncertainty is <em>accepted</em>. Graceful degradation is the <strong>backstop</strong> for the residual tail that partitioning cannot kill (tail events still happen). And that backstop pays for itself in throughput.</p>
+ <p>The argument in one move: fix a latency-percentile guarantee and ask how much load a single server can carry while meeting it. Tighten the percentile and sustainable load <em>collapses</em> &mdash; you are spending capacity as insurance against a heavy contention tail. Keep the same percentile but truncate the tail with an anytime degrade (read KV until the deadline, then stop), and the tail cost migrates from missed deadlines to bounded quality loss &mdash; so you can run far hotter for the <em>same</em> guarantee.</p>
+
+ <div class="exp" id="cap">
+   <h4>Explorer — one server, heavy contention tail</h4>
+   <p class="sub">Service = 3&nbsp;ms compute + 7&nbsp;ms KV read, inflated by a lognormal contention multiplier (E[M]=1); deadline on total latency (wait + service). Quality of a truncated read from the Quest curve.</p>
+   <div class="ctrls">
+     <div class="ctl"><label>Contention (&sigma;) <span class="val" id="cap_sig_v">0.70</span></label><input type="range" id="cap_sig" min="0.3" max="1.1" step="0.05" value="0.7"></div>
+     <div class="ctl"><label>Deadline D <span class="val" id="cap_D_v">50 ms</span></label><input type="range" id="cap_D" min="30" max="90" step="5" value="50"></div>
+   </div>
+   <canvas id="cap_plot" width="1300" height="470"></canvas>
+   <p class="cvcap">Max sustainable load vs the latency-percentile guarantee. <span style="color:#b0392f">Hard / full-quality (red)</span> collapses as the guarantee tightens &mdash; and past a point drops to <strong>zero</strong> (infeasible at any load: one contention spike alone exceeds D). <span style="color:#2e7d5b">Anytime-degrade (green)</span> holds the same percentile at far higher load by truncating the tail into quality loss.</p>
+   <div class="rd">
+     <div class="stat"><div class="v" id="cap_a99">–</div><div class="k">hard capacity @ P99</div></div>
+     <div class="stat good"><div class="v" id="cap_b99">–</div><div class="k">anytime capacity @ P99</div></div>
+     <div class="stat good"><div class="v" id="cap_b998">–</div><div class="k">anytime capacity @ P99.8</div></div>
+     <div class="stat"><div class="v" id="cap_deg">–</div><div class="k">degraded @ that P99 load</div></div>
+   </div>
+ </div>
+ <div class="note"><strong>The infeasibility point is the real headline.</strong> A gentle decline from P99 to P99.5 is just an insurance tax. But past roughly P99.8 the hard policy does not merely get expensive &mdash; it becomes <em>impossible at any load</em>, because a single contention spike makes one request&rsquo;s <em>service alone</em> exceed the deadline, and no amount of idle headroom fixes a tail that crosses D. Truncation is the only thing that can. So an ultra-tight SLO tier is <strong>only offerable if you have an anytime-degrade capability</strong> &mdash; degradation is not a corner-cutting move, it is what makes the premium product feasible.</div>
+
+ <h3>Tiered QoS — the business model this unlocks</h3>
+ <p>The reclaimed capacity is sellable as <strong>differentiated QoS</strong>. Not every request wants the same guarantee: a radiologist reading a scan wants the highest tier &mdash; full quality, tightest latency, no degradation, and will pay for it; someone using AI to touch up a photo or for novelty <em>fortune-telling</em> does not, and would rather pay less. So run two classes on the same silicon: <strong>premium</strong> gets priority <em>and</em> the guaranteed low-contention resources (its tail is engineered out, per the partitioning above), so it holds its SLO at full quality; <strong>economy</strong> shares the contended pool and degrades first under pressure. Under load the economy tier <em>absorbs</em> the degradation that protects the premium SLO &mdash; which is exactly what lets the provider run the fleet hot instead of idling it as insurance.</p>
+ <canvas id="tier_plot" width="1300" height="380"></canvas>
+ <p class="cvcap">Priority + guaranteed resources for premium (30% of load), degrade-first economy (70%), one shared server. <span style="color:#2e7d5b">Premium on-time (green)</span> stays pinned near 100% even past nominal capacity; <span style="color:#8a5a1a">economy on-time (amber)</span> and <span style="color:#b0392f">economy degraded-fraction (red dashed)</span> carry the load.</p>
+ <table>
+   <tr><th>Offered load</th><th>Premium on-time</th><th>Economy on-time</th><th>Economy degraded</th><th>Economy Δppl</th></tr>
+   <tr><td>60 req/s</td><td><span class=ok>99.9%</span></td><td>98.1%</td><td>4.4%</td><td>0.65</td></tr>
+   <tr><td>90 req/s</td><td><span class=ok>99.8%</span></td><td>88.1%</td><td>20.3%</td><td>3.90</td></tr>
+   <tr><td>110 req/s</td><td><span class=ok>99.9%</span></td><td>75.1%</td><td>37.0%</td><td>8.01</td></tr>
+   <tr><td>130 req/s</td><td><span class=ok>99.7%</span></td><td>58.7%</td><td>54.9%</td><td>13.04</td></tr>
+   <tr><td>150 req/s</td><td><span class=ok>99.4%</span></td><td>40.4%</td><td>71.5%</td><td>18.47</td></tr>
+ </table>
+ <div class="note"><strong>Read the columns as a price sheet.</strong> The premium column is flat &mdash; that tier is sold on a hard guarantee and the silicon delivers it regardless of fleet load, because priority protects its queue wait and guaranteed resources bound its service tail. The economy columns are the give: as the fleet fills, economy requests are served on time by reading less (degraded &Delta;ppl rising), and only once the server is truly saturated does economy start missing outright. A provider prices the two tiers off exactly these curves. Reproduce: <code>capacity_sim.py</code>.</div>
+
+ <h2><span class="n">05</span>Honesty notes &amp; the tighter analog</h2>
+ <div class="note">
+ <strong>Where the analogy is exact, and where it strains.</strong> A HARQ NACK is <em>bounded</em>: one retransmission and the frame is recovered. Layer&nbsp;2&rsquo;s shed request is just as clean &mdash; it comes back and succeeds. Layer&nbsp;1 is the strained one: a degraded <em>token</em> can propagate autoregressively, so its &Delta;ppl is a per-token quality proxy, not a hard recovery bound. That&rsquo;s why the controller should prefer to degrade on low-stakes tokens and stay conservative. <strong>The tighter analog that restores the bound is speculative decoding under a deadline:</strong> accept the draft token without full verification when time is short, and the verify loop corrects it on a later step &mdash; a true detect&ndash;fallback&ndash;retransmit, one-for-one with HARQ. I built the KV-budget version here because its quality axis is <em>measured</em> on a real model; the speculative variant is the natural follow-on.
+ <br><br>
+ <strong>Model bounds.</strong> Both sims are first-order and illustrative &mdash; the <em>shapes</em> (cliff vs plateau) are the claim, not the absolute milliseconds. Layer&nbsp;1&rsquo;s compute/KV constants are calibrated so the deterministic baseline consumes its deadline slack near a realistic context, at which point the contention tail (the jitter term) drives the misses &mdash; not the deterministic read itself; its quality axis (budget&rarr;&Delta;ppl) is the real Quest measurement. Layer&nbsp;2 is a single-server M/G/1-style queue with a mean-preserving 2-state burst process and a retry feedback loop; production serving adds continuous batching, multiple replicas, and priority classes, all of which move the numbers but not the phenomenon. Reproduce both: <code>deadline_sim.py</code>.
+ </div>
+
+ <h2><span class="n">06</span>Where this sits in the literature</h2>
+ <p class="lead">The idea is not new to computing &mdash; it is just scattered across three communities that rarely cite each other, and none of them frames the trigger the way a modem engineer does (contention-induced deadline miss) <em>and</em> ties the graceful lever to a near-memory KV datapath. That intersection is the open space.</p>
+
+ <h3>1 · Real-time systems — the exact formalism</h3>
+ <p>The classical <strong>imprecise computation</strong> model (Liu et&nbsp;al., late 1980s&ndash;90s) splits a task into a <em>mandatory</em> part and <em>optional</em> parts, and sheds the optional parts under deadline pressure &mdash; a bounded-accuracy loss instead of a miss. This is precisely the NACK principle. It was carried directly into deep learning by <a class="inl" href="https://arxiv.org/abs/2011.01112" target="_blank" rel="noopener">&ldquo;Scheduling Real-time Deep Learning Services as Imprecise Computations&rdquo;</a> (arXiv 2011.01112, 2020), which casts a DNN as mandatory + optional stages and reports <em>near-zero deadline violations</em> at a small accuracy cost &mdash; the same trade this page simulates. The RT community also has <em>anytime algorithms</em> and deadline-aware DNN scheduling at the edge (EdgeServing; real-time work-conserving GPU scheduling for concurrent inference).</p>
+
+ <h3>2 · Adaptive-computation ML — the graceful lever</h3>
+ <p>The mechanism for a bounded-loss <em>model</em> output already exists: <strong>early-exit</strong> networks (BranchyNet, 2016; Shallow-Deep, DeeBERT), anytime multi-scale nets (MSDNet), and for LLMs specifically <a class="inl" href="https://arxiv.org/abs/2207.07061" target="_blank" rel="noopener">Confident Adaptive Language Modeling (CALM)</a> (Schuster et&nbsp;al., NeurIPS 2022), which exits early per token with a <em>provable</em> quality bound vs the full model. <strong>Speculative decoding</strong> (Leviathan et&nbsp;al., ICML 2023) is the verify-and-correct variant &mdash; the tightest HARQ analog. But this whole line is motivated by <em>average</em> speedup, almost never by hard-deadline robustness under contention.</p>
+
+ <h3>3 · ML serving systems — mostly engineer the variability away</h3>
+ <p>The serving community attacks the same tail, but its instinct is to <em>remove</em> variability rather than degrade gracefully. <a class="inl" href="https://www.barroso.org/publications/TheTailAtScale.pdf" target="_blank" rel="noopener">&ldquo;The Tail at Scale&rdquo;</a> (Dean &amp; Barroso, CACM 2013) is the canonical statement that tail latency comes from shared-resource contention, background work, and queueing &mdash; your control-plane point, for datacenters. <a class="inl" href="https://www.usenix.org/conference/osdi20/presentation/gujarati" target="_blank" rel="noopener">Clockwork</a> (OSDI 2020) makes DNN serving predictable by eliminating variability from the bottom up. The current LLM wave &mdash; Orca, vLLM/PagedAttention, Sarathi-Serve, DistServe, Llumnix &mdash; is SLO-aware <em>scheduling</em>; admission control / load-shedding (this page&rsquo;s Layer&nbsp;2) is standard overload practice now reaching LLM serving, and recent work explicitly measures the <a class="inl" href="https://arxiv.org/html/2508.20274v1" target="_blank" rel="noopener">noisy-neighbor / predictability problem on shared GPU clusters</a>.</p>
+
+ <div class="note"><strong>The whitespace.</strong> Community&nbsp;1 has the deadline-miss-under-contention framing but treats the model as a black-box accuracy knob. Community&nbsp;2 has the fine-grained quality lever (early-exit, KV budget) but tunes it for throughput, not deadlines. Community&nbsp;3 mostly tries to make the tail <em>disappear</em> rather than plan a bounded-loss fallback for when it doesn&rsquo;t. Almost nobody (I found no direct prior art) does all three at once: <em>partition by criticality so the tight path runs on guaranteed low-contention resources, then absorb the residual contention tail with a near-memory KV read-budget cut whose quality cost is measured, and sell the reclaimed capacity as tiered QoS</em>. That is the modem engineer&rsquo;s reflex &mdash; guaranteed resources first, bounded-loss backstop second, throughput as the payoff &mdash; applied to inference silicon, and it is the through-line from this page to the <a class="inl" href="study.html">memory-boundary study</a>.</div>
+
+ <div class="foot">
+   Jim Chou &middot; a real-time-systems lens on inference serving. Companion to the <a href="study.html">near-memory memory-boundary study</a>.<br>
+   Simulations run live in your browser; reference implementation and calibration in <a href="https://github.com/jimchakra/AI" target="_blank" rel="noopener">the repo</a>.
+ </div>
+</main>
+<script>
+/* ---------- seeded PRNG + distributions (deterministic per render) ---------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function mkRng(seed){const r=mulberry32(seed);let spare=null;
+  return {u:r,
+    gauss:function(m,s){if(spare!==null){const v=spare;spare=null;return m+s*v;}
+      let u=0,v=0;while(u===0)u=r();while(v===0)v=r();const mag=Math.sqrt(-2*Math.log(u));spare=mag*Math.sin(2*Math.PI*v);return m+s*mag*Math.cos(2*Math.PI*v);},
+    expo:function(mean){let u=0;while(u===0)u=r();return -Math.log(u)*mean;},
+    pois:function(lam){const L=Math.exp(-lam);let k=0,p=1;do{k++;p*=r();}while(p>L);return k-1;}};}
+
+/* ---------- Quest degrade levels: [budget, read_fraction, quality Δppl%] ---------- */
+const QUEST=[[2048,1.000,0.00],[1024,0.749,0.12],[512,0.434,0.97],[256,0.229,4.09],[128,0.115,12.97]];
+
+/* ---------- generic canvas line plot with optional second y-axis ---------- */
+function plot(cv,o){
+  const dpr=Math.max(1,window.devicePixelRatio||1);
+  const W=cv.width, H=cv.height, ctx=cv.getContext('2d');
+  ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,W,H);
+  const L=68,R=o.y2?70:24,T=24,B=52;
+  const x0=L,x1=W-R,y0=H-B,y1=T;
+  const xmin=o.xmin,xmax=o.xmax,ymin=o.ymin,ymax=o.ymax;
+  const X=v=>x0+(v-xmin)/(xmax-xmin)*(x1-x0);
+  const Y=v=>y0+(v-ymin)/(ymax-ymin)*(y1-y0);
+  ctx.font='12px -apple-system,Segoe UI,Roboto,sans-serif';
+  // grid + left ticks
+  ctx.strokeStyle='#eef1f4'; ctx.fillStyle='#93a1b0'; ctx.lineWidth=1;
+  const ny=o.yticks||5;
+  for(let i=0;i<=ny;i++){const v=ymin+(ymax-ymin)*i/ny,yy=Y(v);
+    ctx.beginPath();ctx.moveTo(x0,yy);ctx.lineTo(x1,yy);ctx.stroke();
+    ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText((o.yfmt?o.yfmt(v):v.toFixed(0)),x0-8,yy);}
+  // x ticks
+  const nx=o.xticks||6;ctx.textAlign='center';ctx.textBaseline='top';
+  for(let i=0;i<=nx;i++){const v=xmin+(xmax-xmin)*i/nx,xx=X(v);
+    ctx.fillText((o.xfmt?o.xfmt(v):v.toFixed(0)),xx,y0+8);}
+  // right axis
+  if(o.y2){ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle='#2e7d5b';
+    for(let i=0;i<=ny;i++){const v=o.y2min+(o.y2max-o.y2min)*i/ny,yy=Y(o.ymin+(o.ymax-o.ymin)*i/ny);
+      ctx.fillText((o.y2fmt?o.y2fmt(v):v.toFixed(0)),x1+8,yy);}}
+  // axis labels
+  ctx.fillStyle='#6a757f';ctx.textAlign='center';ctx.textBaseline='alphabetic';
+  ctx.fillText(o.xlabel||'',(x0+x1)/2,H-8);
+  ctx.save();ctx.translate(16,(y0+y1)/2);ctx.rotate(-Math.PI/2);ctx.fillText(o.ylabel||'',0,0);ctx.restore();
+  if(o.y2label){ctx.save();ctx.translate(W-10,(y0+y1)/2);ctx.rotate(-Math.PI/2);ctx.fillStyle='#2e7d5b';ctx.fillText(o.y2label,0,0);ctx.restore();}
+  // frame
+  ctx.strokeStyle='#c9d3dd';ctx.beginPath();ctx.moveTo(x0,y1);ctx.lineTo(x0,y0);ctx.lineTo(x1,y0);ctx.stroke();
+  // marker (vertical)
+  if(o.marker!==undefined){ctx.strokeStyle='#c3ccd4';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(X(o.marker),y1);ctx.lineTo(X(o.marker),y0);ctx.stroke();ctx.setLineDash([]);}
+  // series
+  (o.series||[]).forEach(s=>{
+    const yy=v=> s.axis===2 ? Y(o.ymin+(v-o.y2min)/(o.y2max-o.y2min)*(o.ymax-o.ymin)) : Y(v);
+    ctx.strokeStyle=s.color;ctx.fillStyle=s.color;ctx.lineWidth=s.w||2.2;
+    if(s.dash)ctx.setLineDash(s.dash);else ctx.setLineDash([]);
+    if(s.type==='scatter'){s.pts.forEach(p=>{ctx.beginPath();ctx.arc(X(p[0]),yy(p[1]),s.r||1.6,0,7);ctx.fill();});}
+    else{ctx.beginPath();s.pts.forEach((p,i)=>{const px=X(p[0]),py=yy(p[1]);i?ctx.lineTo(px,py):ctx.moveTo(px,py);});ctx.stroke();
+      if(s.dots)s.pts.forEach(p=>{ctx.beginPath();ctx.arc(X(p[0]),yy(p[1]),2.6,0,7);ctx.fill();});}
+    ctx.setLineDash([]);
+  });
+  // legend
+  if(o.legend){ctx.textAlign='left';ctx.textBaseline='middle';ctx.font='12px -apple-system,Segoe UI,sans-serif';
+    let lx=x0+10,ly=y1+8;o.legend.forEach(g=>{ctx.fillStyle=g.color;ctx.fillRect(lx,ly-5,16,3);ctx.fillStyle='#42525f';ctx.fillText(g.t,lx+22,ly);lx+=ctx.measureText(g.t).width+64;});}
+}
+
+/* ================= LAYER 1 sim ================= */
+function l1_tokenTime(cbase,alpha,f,L,jit){return (cbase+alpha*f*L)*(1+jit);}
+function l1_jit(rng,sev){let b=Math.abs(rng.gauss(0,0.06*sev));if(rng.u()<0.04*sev)b+=rng.expo(1.2*sev+1e-9);return b;}
+function l1_run(P){ // returns {rigid:{hit,stall,q,budgetWorst,times}, robust:{...}}
+  const rng=mkRng(P.seed||12345), lv=QUEST;
+  let ewma=0;
+  const out={rigid:{miss:0,lag:0,q:0,worst:2048,times:[]},robust:{miss:0,lag:0,q:0,worst:2048,times:[]}};
+  for(let i=0;i<P.n;i++){
+    const L=P.L0+(P.Lmax-P.L0)*i/Math.max(1,P.n-1);
+    const jit=l1_jit(rng,P.jit);
+    // rigid
+    const tr=l1_tokenTime(P.cbase,P.alpha,1.0,L,jit);
+    if(P.keepTimes)out.rigid.times.push(tr);
+    if(tr>P.D){out.rigid.miss++;out.rigid.lag+=(tr-P.D);}
+    // robust
+    const jg=ewma+P.guard; let ch=lv[lv.length-1];
+    for(let k=0;k<lv.length;k++){if(l1_tokenTime(P.cbase,P.alpha,lv[k][1],L,jg)<=P.D){ch=lv[k];break;}}
+    const tb=l1_tokenTime(P.cbase,P.alpha,ch[1],L,jit);
+    if(P.keepTimes)out.robust.times.push(tb);
+    out.robust.q+=ch[2]; if(ch[0]<out.robust.worst)out.robust.worst=ch[0];
+    if(tb>P.D){out.robust.miss++;out.robust.lag+=(tb-P.D);}
+    ewma=0.9*ewma+0.1*jit;
+  }
+  for(const p of ['rigid','robust']){const m=out[p];m.hit=100*(P.n-m.miss)/P.n;m.avgq=m.q/P.n;}
+  return out;
+}
+function l1_render(){
+  const rate=+document.getElementById('l1_rate').value, D=1000/rate;
+  const ctxL=+document.getElementById('l1_ctx').value;
+  const jit=+document.getElementById('l1_jit').value, guard=+document.getElementById('l1_g').value;
+  document.getElementById('l1_rate_v').textContent=rate+' tok/s';
+  document.getElementById('l1_D').textContent=D.toFixed(1);
+  document.getElementById('l1_ctx_v').textContent=ctxL;
+  document.getElementById('l1_jit_v').textContent=jit.toFixed(2);
+  document.getElementById('l1_g_v').textContent=guard.toFixed(2);
+  const base={cbase:8,alpha:0.012,L0:200,jit:jit,guard:guard,D:D,n:600,seed:777};
+  // sweep over context
+  const rigidHit=[],robHit=[],robQ=[];
+  for(let Lm=400;Lm<=6000;Lm+=400){const r=l1_run(Object.assign({},base,{Lmax:Lm}));
+    rigidHit.push([Lm,r.rigid.hit]);robHit.push([Lm,r.robust.hit]);robQ.push([Lm,r.robust.avgq]);}
+  const qmax=Math.max(6,Math.ceil(Math.max.apply(null,robQ.map(p=>p[1]))+1));
+  plot(document.getElementById('l1_sweep'),{
+    xmin:400,xmax:6000,ymin:0,ymax:100,xticks:7,yticks:5,
+    y2:true,y2min:0,y2max:qmax,
+    marker:ctxL,
+    xlabel:'context length (tokens)',ylabel:'deadline-hit rate (%)',y2label:'robust quality cost (Δppl%/token)',
+    y2fmt:v=>v.toFixed(1),
+    series:[
+      {pts:rigidHit,color:'#b0392f',dots:true},
+      {pts:robHit,color:'#2e7d5b',dots:true},
+      {pts:robQ,color:'#2e7d5b',dash:[5,4],w:1.8,axis:2}
+    ],
+    legend:[{t:'rigid on-time %',color:'#b0392f'},{t:'robust on-time %',color:'#2e7d5b'},{t:'robust Δppl/token',color:'#2e7d5b'}]
+  });
+  // timeline at marker context
+  const rt=l1_run(Object.assign({},base,{Lmax:ctxL,n:220,keepTimes:true}));
+  const ymaxT=Math.max(D*1.6, Math.min(D*4, Math.max.apply(null,rt.rigid.times)) );
+  plot(document.getElementById('l1_time'),{
+    xmin:0,xmax:220,ymin:0,ymax:ymaxT,xticks:6,yticks:4,
+    xlabel:'token index (context '+ctxL+')',ylabel:'per-token time (ms)',
+    series:[
+      {type:'scatter',pts:rt.rigid.times.map((t,i)=>[i,t]),color:'#b0392f',r:1.7},
+      {type:'scatter',pts:rt.robust.times.map((t,i)=>[i,t]),color:'#2e7d5b',r:1.7},
+      {pts:[[0,D],[220,D]],color:'#8a5a1a',dash:[6,4],w:1.6}
+    ],
+    legend:[{t:'rigid',color:'#b0392f'},{t:'robust',color:'#2e7d5b'},{t:'deadline D',color:'#8a5a1a'}]
+  });
+  // stats at marker context (full-length run for stable stall)
+  const rr=l1_run(Object.assign({},base,{Lmax:ctxL,n:600}));
+  document.getElementById('l1_rh').textContent=rr.rigid.hit.toFixed(0)+'%';
+  document.getElementById('l1_rs').textContent=(rr.rigid.lag/1000).toFixed(1)+' s';
+  document.getElementById('l1_bh').textContent=rr.robust.hit.toFixed(0)+'%';
+  document.getElementById('l1_bq').textContent=rr.robust.avgq.toFixed(2)+' Δppl%';
+  document.getElementById('l1_bb').textContent=rr.robust.worst;
+}
+
+/* ================= LAYER 2 sim ================= */
+function l2_run(P){
+  const rng=mkRng(P.seed);
+  const lam=P.rho*P.mu/1000, meanS=1000/P.mu, timeout=3*P.slo;
+  const q=[]; let busy=0, good=0, served=0, shed=0, offered=0; const lat=[]; let retry=[];
+  const hi=lam*(1+1.5*P.burst), lo=Math.max(0,lam*(1-1.5*P.burst)); let inB=false;
+  const steps=Math.floor(P.T/1);
+  for(let s=0;s<steps;s++){const now=s;
+    let rate=lam; if(P.burst>0){if(rng.u()<0.03)inB=!inB;rate=inB?hi:lo;}
+    let arr=rng.pois(rate);
+    const nr=[]; for(const rt of retry){if(rt<=now)arr++;else nr.push(rt);} retry=nr;
+    for(let a=0;a<arr;a++){offered++;
+      if(P.shed){const pw=Math.max(0,busy-now)+q.length*meanS; if(pw>P.slo*(1-P.guard)){shed++;retry.push(now+150);continue;}}
+      q.push(now);
+    }
+    if(q.length&&busy<=now){const enq=q.shift();const svc=Math.max(0.5,rng.gauss(meanS,meanS*0.35));
+      const start=Math.max(now,busy);busy=start+svc;const L=(start-enq)+svc;served++;lat.push(L);
+      if(L<=P.slo)good++; else if(L>timeout&&rng.u()<P.retry)retry.push(now+80);}
+  }
+  lat.sort((a,b)=>a-b);const p99=lat.length?lat[Math.max(0,Math.floor(0.99*lat.length)-1)]:0;
+  return {goodput:good/(P.T/1000),p99:p99,shed:100*shed/Math.max(1,offered)};
+}
+function l2_sweep(shed,base){const rhos=[0.5,0.6,0.7,0.8,0.9,1.0,1.1,1.25,1.4,1.6];const seeds=[1,2,3];
+  const g=[],sh=[];
+  for(const rho of rhos){let ag=0,as=0;for(const sd of seeds){const r=l2_run(Object.assign({},base,{rho:rho,shed:shed,seed:sd}));ag+=r.goodput;as+=r.shed;}
+    g.push([rho,ag/seeds.length]);sh.push([rho,as/seeds.length]);}
+  return {g:g,sh:sh};
+}
+function l2_render(){
+  const slo=+document.getElementById('l2_slo').value, burst=+document.getElementById('l2_b').value, retry=+document.getElementById('l2_r').value;
+  document.getElementById('l2_slo_v').textContent=slo+' ms';
+  document.getElementById('l2_b_v').textContent=burst.toFixed(2);
+  document.getElementById('l2_r_v').textContent=retry.toFixed(2);
+  const base={mu:100,slo:slo,burst:burst,retry:retry,guard:0.25,T:6000};
+  const rig=l2_sweep(false,base), rob=l2_sweep(true,base);
+  plot(document.getElementById('l2_sweep'),{
+    xmin:0.5,xmax:1.6,ymin:0,ymax:100,xticks:6,yticks:5,
+    y2:true,y2min:0,y2max:100,
+    xlabel:'offered load  ρ = λ / capacity',ylabel:'useful goodput (req/s within SLO)',y2label:'robust shed rate (%)',
+    xfmt:v=>v.toFixed(1),y2fmt:v=>v.toFixed(0),
+    series:[
+      {pts:rig.g,color:'#b0392f',dots:true},
+      {pts:rob.g,color:'#2e7d5b',dots:true},
+      {pts:rob.sh,color:'#2e7d5b',dash:[5,4],w:1.8,axis:2}
+    ],
+    legend:[{t:'rigid goodput',color:'#b0392f'},{t:'robust goodput',color:'#2e7d5b'},{t:'robust shed %',color:'#2e7d5b'}]
+  });
+  // stats
+  const plateau=Math.max.apply(null,rob.g.map(p=>p[1]));
+  const rigEnd=rig.g[rig.g.length-1][1], robEnd=rob.g[rob.g.length-1][1];
+  document.getElementById('l2_peak').textContent=plateau.toFixed(0)+' req/s';
+  document.getElementById('l2_coll').textContent=rigEnd.toFixed(0)+' req/s';
+  document.getElementById('l2_gain').textContent=(robEnd/Math.max(0.5,rigEnd)).toFixed(0)+'×';
+  document.getElementById('l2_shed').textContent=rob.sh[rob.sh.length-1][1].toFixed(0)+'%';
+}
+
+/* ================= CAPACITY vs PERCENTILE sim ================= */
+function qcost(f){f=Math.max(0,Math.min(1,f));const F=[1,0.749,0.434,0.229,0.115,0],Q=[0,0.12,0.97,4.09,12.97,30];
+  for(let i=0;i<F.length-1;i++){if(f<=F[i]&&f>=F[i+1]){const t=F[i]>F[i+1]?(F[i]-f)/(F[i]-F[i+1]):0;return Q[i]+t*(Q[i+1]-Q[i]);}}return 0;}
+function capSim(lam,policy,P){const rng=mkRng(P.seed||99);const mu=-P.sigma*P.sigma/2;
+  let dep=0,t=0,ontime=0,deg=0,qs=0;const n=P.N,warm=P.warm;
+  for(let i=0;i<n;i++){let u=rng.u();if(u<=0)u=1e-9;t+=-Math.log(1-u)/lam;
+    const start=t>dep?t:dep;const W=start-t;const M=Math.exp(mu+P.sigma*rng.gauss(0,1));const full=P.c+P.k0*M;
+    let svc,f=1;
+    if(policy==='A'){svc=full;}
+    else{const budget=P.D-W;if(budget<=P.c){f=0;svc=P.c;}else{f=Math.min(1,(budget-P.c)/(P.k0*M));svc=P.c+f*P.k0*M;}if(f<0.999)deg++;qs+=qcost(f);}
+    const d=start+svc;const lat=d-t;dep=d;if(i<warm)continue;if(lat<=P.D+1e-9)ontime++;}
+  const nn=n-warm;return{lam,ontime:ontime/nn,degraded:deg/n,q:qs/n};}
+function capSweep(policy,lams,P){return lams.map(l=>capSim(l,policy,P));}
+function capacityAt(rows,target){let best=0,prev=null;
+  for(const r of rows){if(r.ontime>=target)best=r.lam;
+    if(prev&&prev.ontime>=target&&r.ontime<target){const f=(prev.ontime-target)/(prev.ontime-r.ontime+1e-12);best=prev.lam+f*(r.lam-prev.lam);break;}
+    prev=r;}return best;}
+const CAP_TARGETS=[0.90,0.95,0.99,0.995,0.998,0.999];
+const CAP_LABELS=['P90','P95','P99','P99.5','P99.8','P99.9'];
+function cap_render(){
+  const sigma=+document.getElementById('cap_sig').value, D=+document.getElementById('cap_D').value;
+  document.getElementById('cap_sig_v').textContent=sigma.toFixed(2);
+  document.getElementById('cap_D_v').textContent=D+' ms';
+  const P={N:40000,warm:1000,D:D,c:3,k0:7,sigma:sigma,seed:99};
+  const lams=[];for(let i=0;i<16;i++)lams.push(0.02+i*0.008);
+  const A=capSweep('A',lams,P), B=capSweep('B',lams,P);
+  const aC=CAP_TARGETS.map((t,i)=>[i,capacityAt(A,t)*1000]);
+  const bC=CAP_TARGETS.map((t,i)=>[i,capacityAt(B,t)*1000]);
+  const ymax=Math.max(120,Math.ceil(Math.max.apply(null,bC.map(p=>p[1]))/20)*20);
+  plot(document.getElementById('cap_plot'),{
+    xmin:0,xmax:5,ymin:0,ymax:ymax,xticks:5,yticks:6,
+    xlabel:'latency-percentile guarantee',ylabel:'max sustainable load (req/s)',
+    xfmt:v=>CAP_LABELS[Math.round(v)]||'',
+    series:[{pts:aC,color:'#b0392f',dots:true},{pts:bC,color:'#2e7d5b',dots:true}],
+    legend:[{t:'hard / full quality',color:'#b0392f'},{t:'anytime degrade',color:'#2e7d5b'}]
+  });
+  const a99=capacityAt(A,0.99)*1000, b99=capacityAt(B,0.99)*1000, b998=capacityAt(B,0.998)*1000;
+  const capB99=capacityAt(B,0.99); let near=B[0];for(const r of B)if(Math.abs(r.lam-capB99)<Math.abs(near.lam-capB99))near=r;
+  document.getElementById('cap_a99').textContent=a99.toFixed(0)+' req/s';
+  document.getElementById('cap_b99').textContent=b99.toFixed(0)+' req/s';
+  document.getElementById('cap_b998').textContent=(b998>0?b998.toFixed(0)+' req/s':'—');
+  document.getElementById('cap_deg').textContent=(near.degraded*100).toFixed(1)+'%';
+}
+/* ---- tiered QoS (static, from capacity_sim.py reference) ---- */
+function draw_tiers(){
+  const load=[60,90,110,130,150];
+  const prem=[99.9,99.8,99.9,99.7,99.4], eon=[98.1,88.1,75.1,58.7,40.4], edeg=[4.4,20.3,37.0,54.9,71.5];
+  plot(document.getElementById('tier_plot'),{
+    xmin:60,xmax:150,ymin:0,ymax:100,xticks:5,yticks:5,
+    xlabel:'offered load (req/s)  — nominal server capacity ≈ 100',ylabel:'percent (%)',
+    xfmt:v=>v.toFixed(0),
+    series:[
+      {pts:load.map((l,i)=>[l,prem[i]]),color:'#2e7d5b',dots:true},
+      {pts:load.map((l,i)=>[l,eon[i]]),color:'#8a5a1a',dots:true},
+      {pts:load.map((l,i)=>[l,edeg[i]]),color:'#b0392f',dash:[5,4],w:1.8,dots:true}
+    ],
+    legend:[{t:'premium on-time',color:'#2e7d5b'},{t:'economy on-time',color:'#8a5a1a'},{t:'economy degraded',color:'#b0392f'}]
+  });
+}
+
+/* ---------- wire up ---------- */
+['l1_rate','l1_ctx','l1_jit','l1_g'].forEach(id=>document.getElementById(id).addEventListener('input',l1_render));
+['l2_slo','l2_b','l2_r'].forEach(id=>document.getElementById(id).addEventListener('input',l2_render));
+['cap_sig','cap_D'].forEach(id=>document.getElementById(id).addEventListener('input',cap_render));
+l1_render(); l2_render(); cap_render(); draw_tiers();
+</script>
+</body></html>
