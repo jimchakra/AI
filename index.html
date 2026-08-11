@@ -39,6 +39,12 @@
   .foot .lbl{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--faint);display:block;margin-bottom:6px}
   .foot a{color:var(--navy);text-decoration:none;border-bottom:1px solid #cbd4dc}
   .foot a:hover{border-bottom-color:var(--navy)}
+  .path{border:1px solid var(--rule);border-radius:12px;padding:16px 20px 14px;background:#fbfcfd;margin:26px 0 4px}
+  .path-lbl{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--faint);font-weight:600;margin-bottom:9px}
+  .path ol{margin:0;padding-left:20px}
+  .path li{font-size:14px;color:var(--muted);margin:6px 0;line-height:1.5}
+  .path a{color:var(--navy);font-weight:600;text-decoration:none;border-bottom:1px solid #cbd4dc}
+  .path a:hover{border-bottom-color:var(--navy)}
   @media(max-width:640px){ body{font-size:16px} h1{font-size:26px} .wrap{padding:48px 18px 72px} a.card{padding:18px 18px} }
 </style>
 </head>
@@ -47,6 +53,17 @@
   <p class="eyebrow">AI Inference Architecture</p>
   <h1>Real-time &amp; memory-bound inference</h1>
   <p class="lede">Heterogeneous silicon, deadline-driven systems, and compute at the memory boundary — writing, working code, and early silicon results, from building baseband silicon and applying it to where AI inference is heading.</p>
+
+  <div class="path">
+    <div class="path-lbl">New here — a suggested reading path</div>
+    <ol>
+      <li><a href="small-frees-big.html">Small Frees Big</a> — the thesis: why <em>data movement</em>, not arithmetic, sets the limit for inference.</li>
+      <li><a href="study.html">Compute at the Memory Boundary</a> — the full study: thesis → filed patent → verified RTL → grounded synthesis → real-model validation.</li>
+      <li><a href="graceful-degradation.html">Bend, don't break</a> — the systems lens: reliability past P99 and tiered QoS, with four live simulations.</li>
+      <li><a href="kv-selector-spec.html">KV-selector spec</a> — the coprocessor deep-dive (block &amp; timing diagrams, area/latency).</li>
+      <li><a href="https://jimchakra.github.io/6G-NTN/6g_du_rd_ai.html">6G RU/DU study</a> — breadth: the same principles in a 200-core RAN SoC.</li>
+    </ol>
+  </div>
 
   <hr class="rule">
 
