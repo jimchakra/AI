@@ -1,0 +1,142 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Near-memory KV selector — coprocessor spec</title>
+<meta name="description" content="A near-memory content-aware KV-read selector: block diagram, timing model, and area/latency budget. Summary-resident SRAM scan, page top-k, survivor gather — decide-on-compute, enforce-on-memory.">
+<style>
+ :root{--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+   --serif:Georgia,Charter,serif;--ink:#2f3e50;--body:#33404d;--muted:#6a757f;--faint:#93a1b0;
+   --rule:#e4e9ee;--zone:#eef3f8;--accent:#43648f;--ok:#2e7d5b;--warn:#8a5a1a;--page:#fff;}
+ *{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--body);font-family:var(--sans);line-height:1.58;font-size:15.5px}
+ .wrap{max-width:960px;margin:0 auto;padding:52px 24px 96px}
+ .eyebrow{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:1.5px;margin:0 0 12px}
+ h1{font-family:var(--serif);font-size:30px;color:var(--ink);margin:0 0 10px;letter-spacing:-.3px}
+ .dek{font-family:var(--serif);color:#586470;font-size:17px;line-height:1.5;margin:0 0 16px;max-width:76ch}
+ .nav{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 4px}
+ .nav a{font-size:13px;color:var(--accent);text-decoration:none;border:1px solid #cdd8e2;border-radius:20px;padding:5px 13px}
+ h2{font-size:12px;letter-spacing:1.6px;text-transform:uppercase;color:var(--faint);margin:44px 0 8px;padding-bottom:8px;border-bottom:1px solid var(--rule)}
+ h2 .n{color:var(--accent);font-weight:700;margin-right:8px}
+ p{margin:0 0 13px;max-width:78ch}
+ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:#eef1f4;padding:1px 5px;border-radius:4px}
+ .fig{border:1px solid var(--rule);border-radius:14px;padding:16px;background:#fbfcfe;margin:14px 0}
+ .cap{font-size:12.5px;color:var(--muted);margin:8px 2px 0}
+ svg{width:100%;height:auto;display:block}
+ table{border-collapse:collapse;width:100%;font-size:13.5px;margin:8px 0} th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+ th{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+ .note{background:var(--zone);border:1px solid #dde6ef;border-radius:12px;padding:14px 18px;font-size:13.5px;color:#42525f;margin:16px 0}
+ .foot{margin-top:46px;padding-top:18px;border-top:1px solid var(--rule);color:var(--faint);font-size:12.5px}
+ a.inl{color:var(--accent);text-decoration:none;border-bottom:1px solid #cdd8e2}
+</style></head><body><main class="wrap">
+ <p class="eyebrow">Custom Silicon · coprocessor spec</p>
+ <h1>Near-memory KV-read selector</h1>
+ <p class="dek">A content-aware KV-read skipper as a small near-memory coprocessor: keep per-page key summaries in on-chip SRAM, score them against the query, pick the top-k pages, and touch the DRAM arrays only for survivors. Block diagram, timing model, and the area/latency budget — with the honest overheads named.</p>
+ <div class="nav"><a href="study.html">← Study</a><a href="results.html">Results</a><a href="https://github.com/jimchakra/AI" target="_blank" rel="noopener">Code</a></div>
+
+ <h2><span class="n">1</span>Mechanism</h2>
+ <p>Each KV page (P tokens) is summarized by per-channel <strong>min/max of its keys</strong>. For a query <code>q</code>, an upper bound on the max attention score any token in a page can produce is <code>crit = relu(q)·Kmax + min(q,0)·Kmin</code> — sign-correct, and computed <em>without</em> reading the page's full keys. Read only the top-k pages by <code>crit</code> (plus the sink page and the query's own page). Because the score is an over-approximating bound, it rarely drops a page that mattered — high recall, tunable by the page budget.</p>
+
+ <h2><span class="n">2</span>Block diagram</h2>
+ <div class="fig">
+  <svg viewBox="0 0 920 470" role="img" aria-label="Block diagram of the near-memory KV selector">
+   <defs>
+     <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#93a1b0"/></marker>
+     <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#43648f"/></marker>
+     <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#2e7d5b"/></marker>
+   </defs>
+   <!-- compute die -->
+   <rect x="18" y="14" width="884" height="82" rx="12" fill="#fff" stroke="#cdd8e2" stroke-dasharray="5 4"/>
+   <text x="30" y="34" font-size="11" fill="#93a1b0" letter-spacing="1.2">COMPUTE DIE</text>
+   <rect x="330" y="40" width="300" height="44" rx="8" fill="#eef3f8" stroke="#9db3c9"/>
+   <text x="480" y="60" text-anchor="middle" font-size="13" fill="#2f3e50">Query q  →  descriptor</text>
+   <text x="480" y="76" text-anchor="middle" font-size="11" fill="#6a757f">q⁺, q⁻ (or top-r channels) — small</text>
+   <!-- link -->
+   <line x1="470" y1="84" x2="470" y2="150" stroke="#43648f" stroke-width="2" marker-end="url(#ar)"/>
+   <text x="462" y="120" text-anchor="end" font-size="11" fill="#43648f">descriptor ↓</text>
+   <line x1="800" y1="150" x2="800" y2="84" stroke="#2e7d5b" stroke-width="2" marker-end="url(#ag)"/>
+   <text x="808" y="120" font-size="11" fill="#2e7d5b">survivor K/V ↑</text>
+   <text x="640" y="120" text-anchor="middle" font-size="10.5" fill="#93a1b0" font-style="italic">SerDes / CXL link</text>
+   <!-- base die -->
+   <rect x="18" y="150" width="884" height="304" rx="12" fill="#fff" stroke="#cdd8e2"/>
+   <text x="30" y="170" font-size="11" fill="#93a1b0" letter-spacing="1.2">MEMORY BASE DIE — near-memory selector</text>
+   <!-- summary SRAM -->
+   <rect x="40" y="186" width="250" height="58" rx="8" fill="#e4f1ea" stroke="#8fc0a8"/>
+   <text x="165" y="209" text-anchor="middle" font-size="12.5" fill="#2f3e50">Summary SRAM</text>
+   <text x="165" y="226" text-anchor="middle" font-size="10.5" fill="#6a757f">per-page min/max keys · ~12.5% of KV</text>
+   <!-- scorer -->
+   <rect x="335" y="186" width="290" height="58" rx="8" fill="#eef3f8" stroke="#9db3c9"/>
+   <text x="480" y="208" text-anchor="middle" font-size="12.5" fill="#2f3e50">Scorer — D-wide MAC</text>
+   <text x="480" y="225" text-anchor="middle" font-size="10.5" fill="#6a757f">crit = relu(q)·Kmax + q⁻·Kmin</text>
+   <!-- top-k -->
+   <rect x="668" y="186" width="212" height="58" rx="8" fill="#eef3f8" stroke="#9db3c9"/>
+   <text x="774" y="208" text-anchor="middle" font-size="12.5" fill="#2f3e50">Top-k / threshold</text>
+   <text x="774" y="225" text-anchor="middle" font-size="10.5" fill="#6a757f">→ page-select bitmap</text>
+   <!-- gather -->
+   <rect x="668" y="316" width="212" height="58" rx="8" fill="#eef3f8" stroke="#9db3c9"/>
+   <text x="774" y="338" text-anchor="middle" font-size="12.5" fill="#2f3e50">Gather engine</text>
+   <text x="774" y="355" text-anchor="middle" font-size="10.5" fill="#6a757f">reads survivor pages only</text>
+   <!-- DRAM -->
+   <rect x="40" y="300" width="560" height="120" rx="8" fill="#f5f8fb" stroke="#c3ccd4"/>
+   <text x="320" y="328" text-anchor="middle" font-size="13" fill="#2f3e50">DRAM arrays — K/V banks (full cache)</text>
+   <text x="320" y="347" text-anchor="middle" font-size="11" fill="#6a757f">expensive random access; only survivor pages are read</text>
+   <g stroke="#dbe4ee"><line x1="120" y1="360" x2="120" y2="410"/><line x1="200" y1="360" x2="200" y2="410"/><line x1="280" y1="360" x2="280" y2="410"/><line x1="360" y1="360" x2="360" y2="410"/><line x1="440" y1="360" x2="440" y2="410"/><line x1="520" y1="360" x2="520" y2="410"/></g>
+   <!-- arrows -->
+   <line x1="470" y1="150" x2="480" y2="186" stroke="#43648f" stroke-width="2" marker-end="url(#ar)"/>
+   <line x1="290" y1="215" x2="335" y2="215" stroke="#2e7d5b" stroke-width="2" marker-end="url(#ag)"/>
+   <line x1="625" y1="215" x2="668" y2="215" stroke="#43648f" stroke-width="2" marker-end="url(#ar)"/>
+   <line x1="774" y1="244" x2="774" y2="316" stroke="#43648f" stroke-width="2" marker-end="url(#ar)"/>
+   <line x1="668" y1="345" x2="600" y2="345" stroke="#43648f" stroke-width="2" marker-end="url(#ar)"/>
+   <line x1="600" y1="330" x2="668" y2="330" stroke="#2e7d5b" stroke-width="2" marker-end="url(#ag)"/>
+   <text x="634" y="322" text-anchor="middle" font-size="9.5" fill="#6a757f">req / data</text>
+   <line x1="800" y1="316" x2="800" y2="150" stroke="#2e7d5b" stroke-width="2" marker-end="url(#ag)"/>
+   <!-- write path -->
+   <line x1="165" y1="300" x2="165" y2="244" stroke="#93a1b0" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#a)"/>
+   <text x="150" y="276" text-anchor="end" font-size="9.5" fill="#93a1b0">write: min/max</text>
+  </svg>
+  <p class="cap">Decide-on-compute, enforce-on-memory: the compute die sends a tiny query descriptor; the base die scores SRAM-resident page summaries, selects, and gathers only survivor pages from the DRAM arrays. The expensive arrays are touched for survivors only; the summaries (write-time min/max) live in fast on-chip SRAM.</p>
+ </div>
+
+ <h2><span class="n">3</span>Timing</h2>
+ <div class="fig">
+  <svg viewBox="0 0 920 300" role="img" aria-label="Timing diagram of the selector pipeline">
+   <defs><marker id="t" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#93a1b0"/></marker></defs>
+   <!-- lanes -->
+   <text x="12" y="60" font-size="11" fill="#6a757f">SRAM: scan + score</text>
+   <text x="12" y="102" font-size="11" fill="#6a757f">select (top-k)</text>
+   <text x="12" y="144" font-size="11" fill="#6a757f">DRAM: gather survivors</text>
+   <text x="12" y="186" font-size="11" fill="#6a757f">attention compute</text>
+   <line x1="150" y1="30" x2="150" y2="210" stroke="#dce3ea"/>
+   <line x1="150" y1="210" x2="900" y2="210" stroke="#dce3ea"/>
+   <text x="150" y="228" font-size="10.5" fill="#93a1b0">time (cycles) →</text>
+   <!-- token t (accent) -->
+   <rect x="150" y="46" width="150" height="22" rx="3" fill="#2e7d5b"/><text x="225" y="61" text-anchor="middle" font-size="10.5" fill="#fff">scan ≈ nP cyc</text>
+   <rect x="300" y="88" width="40" height="22" rx="3" fill="#88a4c6"/>
+   <rect x="340" y="130" width="300" height="22" rx="3" fill="#3c597f"/><text x="490" y="145" text-anchor="middle" font-size="10.5" fill="#fff">gather kept·Lk (survivors)</text>
+   <rect x="640" y="172" width="180" height="22" rx="3" fill="#4c6f9c"/><text x="730" y="187" text-anchor="middle" font-size="10.5" fill="#fff">attention</text>
+   <text x="150" y="42" font-size="10" fill="#2e7d5b">token t</text>
+   <!-- token t+1 (lighter), scan overlaps t's DRAM stall -->
+   <rect x="360" y="46" width="150" height="22" rx="3" fill="#8fc0a8"/><text x="435" y="61" text-anchor="middle" font-size="10.5" fill="#2f3e50">scan (t+1)</text>
+   <text x="360" y="42" font-size="10" fill="#2e7d5b">token t+1 — hides under t's DRAM stall</text>
+   <!-- brackets / annotations -->
+   <line x1="150" y1="250" x2="300" y2="250" stroke="#93a1b0" marker-start="url(#t)" marker-end="url(#t)"/>
+   <text x="225" y="266" text-anchor="middle" font-size="10.5" fill="#6a757f">SRAM scan ≈ 1/P of a full read (the summary tax)</text>
+   <line x1="340" y1="250" x2="640" y2="250" stroke="#93a1b0" marker-start="url(#t)" marker-end="url(#t)"/>
+   <text x="490" y="266" text-anchor="middle" font-size="10.5" fill="#6a757f">DRAM: (1−kept) of reads avoided — the win</text>
+   <text x="490" y="288" text-anchor="middle" font-size="10.5" fill="#8a5a1a">scan is a serial preamble, but pipelined across the decode loop it tucks under the DRAM stall → off the critical path</text>
+  </svg>
+  <p class="cap">Per-page decision is one D-wide MAC (~1 cycle); the full scan is nP page-scores at SRAM speed. It's a serial preamble before the gather, but token t+1's scan overlaps token t's DRAM gather, so the scan hides under the memory stall.</p>
+ </div>
+
+ <h2><span class="n">4</span>Area &amp; latency budget</h2>
+ <table>
+   <tr><th>Item</th><th>Cost</th><th>Notes</th></tr>
+   <tr><td>Summary storage</td><td><strong>~2/P</strong> of KV (12.5% at P=16)</td><td>per-page min+max keys, SRAM-resident; tune via page size P</td></tr>
+   <tr><td>Selector logic</td><td><strong>sub-0.001 mm² @ 5 nm</strong> (est.)</td><td>a D-wide MAC + accumulator + streaming top-k — NMGR-PE class; negligible vs arrays</td></tr>
+   <tr><td>Score latency</td><td><strong>~nP cycles</strong>, 1 page/cycle</td><td>streamed from SRAM (1–2-cycle access); ~1/P of a full-KV read in cycles</td></tr>
+   <tr><td>Extra read traffic</td><td><strong>+1/P</strong> of KV (summary tax)</td><td>subtract from the skip savings: net saved = (1 − kept − 1/P)</td></tr>
+   <tr><td>DRAM array reads</td><td><strong>kept·Lk</strong> (survivors only)</td><td>the expensive random access, minimized to the selected pages</td></tr>
+   <tr><td>Critical-path add</td><td><strong>~0</strong> if pipelined</td><td>t+1 scan overlaps t's DRAM stall across the decode loop</td></tr>
+ </table>
+
+ <div class="note"><strong>Honest caveats.</strong> The summaries cost <strong>+1/P of KV traffic and storage</strong> — real, and already subtracted from the reported energy savings. The scan is <strong>O(nP)</strong>, so it grows linearly with context; at very long context use a <strong>larger page P</strong> (fewer pages, coarser selection) or <strong>hierarchical selection</strong> (coarse super-pages → refine only the promising ones, turning the scan ~logarithmic). Placement matters: keep summaries in <em>SRAM on the base die</em> and score there, so the query goes down once and survivors come up once — scoring on the compute die instead would cost a link round-trip per step. The min/max bound is content-aware but approximate; validate the quality cost empirically (the <a class="inl" href="study.html">study</a> measures it against the sink+window floor).</p></div>
+
+ <div class="foot">Companion to the <a class="inl" href="study.html">study</a> and the <a class="inl" href="https://github.com/jimchakra/AI" target="_blank" rel="noopener">code</a>. First-order area/latency; absolute numbers pending a foundry PDK. Instance of the "bit-manipulation / selection tax" thesis: the ops GP processors do poorly (gather, select, format) become tiny fixed-function units at the memory boundary.</div>
+</main></body></html>
