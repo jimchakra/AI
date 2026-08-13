@@ -1,0 +1,544 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The bandwidth budget — a full-system capacity model on a Blackhole-class chip</title>
+<meta name="description" content="A first-order full-system (compute die + memory die) model of content-aware KV read-selection on a Tenstorrent Blackhole-class chip: decode is bandwidth-bound, so moving fewer bytes buys 2–3× decode capacity at iso-die and iso-power. Live roofline, cut→capacity, prefill/decode, and QoS explorers.">
+<style>
+ :root{--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+   --serif:Georgia,"Iowan Old Style",Charter,serif;
+   --ink:#2f3e50;--body:#33404d;--muted:#6a757f;--faint:#93a1b0;--rule:#e4e9ee;
+   --zone:#eef3f8;--accent:#43648f;--ok:#2e7d5b;--warn:#8a5a1a;--bad:#a4443a;--page:#fff;
+   --c1:#4c6f9c;--c2:#3c597f;--c3:#88a4c6;--c4:#aec1d6;}
+ *{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--body);font-family:var(--sans);line-height:1.58;font-size:15.5px}
+ .wrap{max-width:1000px;margin:0 auto;padding:52px 24px 96px}
+ .eyebrow{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:1.5px;margin:0 0 12px}
+ h1{font-family:var(--serif);font-size:32px;color:var(--ink);margin:0 0 12px;letter-spacing:-.4px;line-height:1.15}
+ .dek{font-family:var(--serif);color:#586470;font-size:18px;line-height:1.5;margin:0 0 18px;max-width:74ch}
+ .nav{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 6px}
+ .nav a{font-size:13px;color:var(--accent);text-decoration:none;border:1px solid #cdd8e2;border-radius:20px;padding:5px 13px}
+ .nav a:hover{background:var(--zone)}
+ .pill{font-size:11px;font-weight:700;letter-spacing:.6px;color:#fff;background:linear-gradient(160deg,#4c6f9c,#3c597f);border-radius:20px;padding:6px 13px}
+ h2{font-size:12px;letter-spacing:1.6px;text-transform:uppercase;color:var(--faint);margin:52px 0 8px;padding-bottom:8px;border-bottom:1px solid var(--rule)}
+ h2 .n{color:var(--accent);font-weight:700;margin-right:8px}
+ h3{font-size:17px;color:var(--ink);margin:22px 0 6px;font-family:var(--serif)}
+ p{margin:0 0 14px;max-width:76ch} .lead{font-size:16.5px}
+ a.inl{color:var(--accent);text-decoration:none;border-bottom:1px solid #cdd8e2}
+ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:#eef1f4;padding:1px 5px;border-radius:4px}
+ .finds{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin:14px 0}
+ .fc{border:1px solid var(--rule);border-radius:14px;padding:16px 18px;background:#fff}
+ .fc .fn{font-size:10.5px;font-weight:700;letter-spacing:1px;color:var(--accent);margin-bottom:8px}
+ .fc .big{font-size:27px;font-weight:700;color:var(--ink);letter-spacing:-.5px;line-height:1}
+ .fc .lab{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.45}
+ .exp{border:1px solid #d7e0ea;border-radius:16px;padding:20px 22px;background:linear-gradient(180deg,#fbfcfe,#f3f7fb);margin:16px 0}
+ .exp h4{margin:0 0 3px;font-size:15px;color:var(--ink)} .exp .sub{font-size:12.5px;color:var(--muted);margin:0 0 14px}
+ .ctrls{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+ .ctl{display:flex;flex-direction:column;gap:5px} .ctl label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--faint)}
+ .seg{display:flex;border:1px solid #cdd8e2;border-radius:8px;overflow:hidden}
+ .seg button{border:0;background:#fff;padding:6px 11px;font-size:12.5px;color:var(--body);cursor:pointer}
+ .seg button.on{background:var(--accent);color:#fff}
+ input[type=range]{width:220px;accent-color:var(--accent)}
+ .rd{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-top:6px}
+ .stat{background:#fff;border:1px solid var(--rule);border-radius:10px;padding:11px 13px}
+ .stat .v{font-size:21px;font-weight:700;color:var(--ink);letter-spacing:-.3px} .stat .k{font-size:11px;color:var(--muted);margin-top:2px}
+ .stat.good .v{color:var(--ok)} .stat.warn .v{color:var(--warn)} .stat.bad .v{color:var(--bad)}
+ .note{background:var(--zone);border:1px solid #dde6ef;border-radius:12px;padding:14px 18px;font-size:13.5px;color:#42525f;margin:16px 0}
+ .knobbar{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.94);backdrop-filter:blur(6px);border:1px solid var(--rule);border-radius:12px;padding:12px 16px;margin:14px 0 6px;display:flex;gap:22px;flex-wrap:wrap;align-items:center}
+ .knobbar .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--faint);margin-right:6px}
+ canvas{width:100%;height:auto;display:block;margin-top:10px;border-radius:8px}
+ .cvwrap{position:relative}
+ table{border-collapse:collapse;width:100%;font-size:13px;margin:8px 0} th,td{text-align:right;padding:6px 9px;border-bottom:1px solid var(--rule)}
+ th:first-child,td:first-child{text-align:left} th{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+ .foot{margin-top:52px;padding-top:20px;border-top:1px solid var(--rule);color:var(--faint);font-size:12.5px;line-height:1.7}
+ .foot a{color:var(--accent);text-decoration:none;border-bottom:1px solid #cdd8e2}
+ .leg{font-size:11.5px;color:var(--muted);margin-top:8px}.sw{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin:0 4px 0 12px}
+ @media(max-width:720px){h1{font-size:26px}}
+</style></head><body><main class="wrap">
+
+ <p class="eyebrow">AI Inference Architecture · Full-System Model</p>
+ <h1>The bandwidth budget</h1>
+ <p class="dek">Decode is bandwidth-bound, so the way to more inference capacity is not more compute — it is moving fewer bytes. A first-order full-system model (compute die + memory die) of content-aware KV read-selection on a <strong>Tenstorrent Blackhole-class</strong> chip: <strong>2–3× decode capacity at the same die and the same 300&nbsp;W</strong>. Every number below recomputes from two live knobs.</p>
+ <div class="nav">
+   <a href="study.html">← Silicon study</a>
+   <a href="graceful-degradation.html">Bend, don't break ↗</a>
+   <a href="kv-selector-spec.html">KV-selector spec ↗</a>
+   <a href="https://github.com/jimchakra/AI" target="_blank" rel="noopener">Code + CI ↗</a>
+   <span class="pill">FIRST-ORDER MODEL</span>
+ </div>
+
+ <div class="knobbar">
+   <div><span class="lbl">KV precision</span><span class="seg" id="segKV"></span></div>
+   <div><span class="lbl">Peak FP8</span><span class="seg" id="segFP"></span></div>
+   <div style="font-size:12px;color:var(--muted)">Blackhole p150a · 512 GB/s · 32 GB · 300 W · <span id="ridgeLbl"></span></div>
+ </div>
+
+ <h2><span class="n">01</span>The result — total system capacity, iso-die &amp; iso-power</h2>
+ <p class="lead">Not per-token latency — <em>capacity</em>: how much work the same chip does at the same wattage. At the safe operating point (content-aware KV read-selection, ~57% of KV read, ≤1% perplexity on Qwen2.5-1.5B), on 8&nbsp;K context serving:</p>
+ <div class="finds" id="heroTiles"></div>
+ <div class="note"><strong>Why these are one number, not four.</strong> All four are the same ceiling — tokens/s = bandwidth ÷ bytes-per-token — read four ways. Throughput and efficiency fall straight out of it; concurrency is the freed DRAM letting more sequences fit; SLO-goodput is that capacity measured under a fixed latency percentile. The throughput gain is <em>not</em> the per-token speedup (~1.7×) times the batch gain (~2.3×) — both live under the same 512 GB/s, so they don't multiply. The model enforces the identity so the number can't drift upward.</p></div>
+
+ <h2><span class="n">02</span>The behavior, as a timing diagram</h2>
+ <p class="lead">The same story a modem architect would draw: the memory bus is the shared, contended resource, and inference is a scheduling problem on it. Two timing views — <em>throughput</em> (how much work fits in a fixed window) and the <em>deadline</em> behavior under a contention tail.</p>
+ <div class="exp">
+   <h4>Live · anatomy of a decode token — where every byte goes</h4>
+   <p class="sub">One decoded token's memory reads at the 8&nbsp;K serving point, broken into the real functional blocks and drawn to scale. Attention projection weights and FFN gate/up weights are irreducible; the two marked <strong>▼</strong> are what the invention compresses — the <span style="color:#c17f4a;font-weight:600">KV read</span> (content-aware selection) and the <span style="color:#7d93ac;font-weight:600">FFN down-projection</span> (activation read-mask). Shorter bar = less bus time = more tokens/second at the same 512 GB/s.</p>
+   <div class="cvwrap"><canvas id="cvGbus" width="920" height="250"></canvas></div>
+   <div class="leg"><span class="sw" style="background:#3c597f"></span>attn QKVO wt<span class="sw" style="background:#6f93bb"></span>FFN gate/up wt<span class="sw" style="background:#a9c0da"></span>FFN down wt ▼<span class="sw" style="background:#c17f4a"></span>KV read ▼<span class="sw" style="background:#e0b07a"></span>selection tax</div>
+ </div>
+ <div class="exp">
+   <h4>Live · apples-to-apples race — same datasheet silicon, one with the throttle</h4>
+   <p class="sub">Two identical <strong>Galaxy Blackhole</strong> systems (Tenstorrent datasheet: 16 TB/s, 1 TB DRAM, 23 PFLOPS FP8 — calibrated so the baseline reproduces their published <strong>350 tok/s/user on DeepSeek-R1</strong>). The <em>same</em> job stream hits both under continuous batching. Left is stock; right adds memory-access reduction + tiered KV throttling. Everything else equal — watch the right deliver <strong>&gt;2× the tokens</strong> in the same wall-clock, while protecting the premium job.</p>
+   <div class="ctrls">
+     <div class="ctl"><label>&nbsp;</label><div class="seg" id="segPlay"></div></div>
+     <div class="ctl"><label>achieved BW η = <span id="etaLab" style="color:var(--accent);font-weight:700"></span> <span style="color:var(--muted)">(scales absolutes; ratio is η-independent)</span></label><input type="range" id="eta" min="30" max="100" step="1" value="48"></div>
+   </div>
+   <div class="cvwrap"><canvas id="cvRace" width="920" height="330"></canvas></div>
+   <div class="leg">jobs:<span class="sw" style="background:#c17f4a"></span>RAG 32K<span class="sw" style="background:#7a5ea8"></span>reason ⋆premium<span class="sw" style="background:#4c6f9c"></span>chat 2K<span class="sw" style="background:#6f93bb"></span>chat 16K<span class="sw" style="background:#88a4c6"></span>classify</div>
+ </div>
+ <div class="exp">
+   <h4>Live · deadline schedule — hang, or bend?</h4>
+   <p class="sub">The robust-modem idea as a schedule (schematic; the quantified queueing is in §06). Requests share one server under a latency deadline, and two hit a contention tail. <strong>Hard</strong>: a request that can't finish in time overruns — the hang. <strong>Anytime-truncate</strong>: it reads less KV to land on the deadline — bounded quality loss, not a miss. <strong>Tiered</strong>: a premium lane is guaranteed and never bends; economy absorbs the truncation.</p>
+   <div class="ctrls"><div class="ctl"><label>policy</label><div class="seg" id="segGq"></div></div></div>
+   <div class="cvwrap"><canvas id="cvGqos" width="920" height="300"></canvas></div>
+   <div class="leg"><span class="sw" style="background:var(--c3)"></span>compute (mandatory)<span class="sw" style="background:var(--accent)"></span>KV read<span class="sw" style="background:var(--warn)"></span>truncated / degraded<span class="sw" style="background:var(--bad)"></span>deadline miss</div>
+ </div>
+
+ <h2><span class="n">03</span>Where decode sits — the roofline</h2>
+ <p class="lead">Blackhole feeds ~745 TFLOPS of FP8 from 512 GB/s: the roofline ridge is at ~1,455 FLOP/byte. Prefill (compute-bound, parallel) runs up near the ridge — that is what the MAC array is <em>sized for</em>. Decode is a different phase on the same silicon: batch-1 lives at 2–3 FLOP/byte, ~500× below the ridge, and <strong>no batch size climbs off the memory-bound floor</strong> (arithmetic intensity asymptotes near 34). Drag the batch to watch the serving point walk up the slope — never to the ridge.</p>
+ <div class="exp">
+   <h4>Live · roofline &amp; the operating points</h4>
+   <p class="sub">Log–log. The throttle raises arithmetic intensity (moves right) but stays deep in the memory-bound region — so the win is bandwidth efficiency, not reaching compute.</p>
+   <div class="ctrls">
+     <div class="ctl"><label>serving batch B = <span id="rbLab" style="color:var(--accent);font-weight:700"></span> <span id="rbFit" style="color:var(--muted)"></span></label><input type="range" id="rb" min="1" max="120" step="1" value="23"></div>
+   </div>
+   <div class="cvwrap"><canvas id="cvRoof" width="920" height="440"></canvas></div>
+   <div class="leg"><span class="sw" style="background:var(--accent)"></span>roofline<span class="sw" style="background:var(--warn)"></span>batch-1 decode<span class="sw" style="background:var(--ok)"></span>serving point (yours)<span class="sw" style="background:var(--bad)"></span>prefill (compute-bound)</div>
+ </div>
+
+ <h2><span class="n">04</span>What the cut buys</h2>
+ <p class="lead">The centerpiece. Content-aware KV read-selection removes a fraction of KV reads; because decode is memory-bound, capacity rises by ~1/(1−cut) — until the <em>quality</em> curve stops you (not the compute wall — the ridge is never reached). Drag the cut and the context; watch capacity climb and the quality cost with it.</p>
+ <div class="exp">
+   <h4>Live · KV read cut → capacity, bounded by quality</h4>
+   <p class="sub">Quality (Δppl) is the measured Quest curve on Qwen2.5-1.5B / WikiText-2. Green band = ≤1% (safe); amber = ≤~4% (aggressive); red = too lossy. Capacity = tokens/s at the largest batch that fits 32 GB at the chosen cut.</p>
+   <div class="ctrls">
+     <div class="ctl"><label>KV read cut = <span id="fkvLab" style="color:var(--accent);font-weight:700"></span></label><input type="range" id="fkv" min="0" max="90" step="1" value="57"></div>
+     <div class="ctl"><label>context = <span id="csLab" style="color:var(--accent);font-weight:700"></span></label><input type="range" id="cs" min="0" max="4" step="1" value="1"></div>
+   </div>
+   <div class="rd" id="cutStats"></div>
+   <div class="cvwrap"><canvas id="cvCut" width="920" height="330"></canvas></div>
+   <div class="leg"><span class="sw" style="background:var(--accent)"></span>serving capacity (× baseline)<span class="sw" style="background:var(--ok)"></span>safe<span class="sw" style="background:var(--warn)"></span>aggressive<span class="sw" style="background:var(--bad)"></span>too lossy</div>
+ </div>
+
+ <h2><span class="n">05</span>Does decode even matter? — the prefill/decode split</h2>
+ <p class="lead">A decode win only matters if decode is where the time goes. Prefill is a fast parallel burst; decode is sequential and memory-bound, re-reading weights+KV every token. So the split is set by the prompt:generation ratio — and for anything with real generation, decode is nearly all of it. Set a workload; the bar is where the wall-clock goes, and the stat is the end-to-end speedup your current cut delivers (Amdahl).</p>
+ <div class="exp">
+   <h4>Live · end-to-end time = prefill + decode</h4>
+   <p class="sub">Batch-1 latency decomposition on the 8B model. End-to-end speedup applies the current section-03 cut to the decode fraction only.</p>
+   <div class="ctrls">
+     <div class="ctl"><label>prompt tokens P = <span id="pLab" style="color:var(--accent);font-weight:700"></span></label><input type="range" id="pp" min="100" max="16000" step="100" value="1000"></div>
+     <div class="ctl"><label>generated tokens G = <span id="gLab" style="color:var(--accent);font-weight:700"></span></label><input type="range" id="gg" min="1" max="8000" step="1" value="500"></div>
+   </div>
+   <div class="rd" id="e2eStats"></div>
+   <div class="cvwrap"><canvas id="cvE2E" width="920" height="120"></canvas></div>
+   <div class="leg"><span class="sw" style="background:var(--bad)"></span>prefill (compute-bound)<span class="sw" style="background:var(--accent)"></span>decode (memory-bound)</div>
+ </div>
+
+ <h2><span class="n">06</span>Two more capacity effects — concurrency &amp; SLO-goodput</h2>
+ <p class="lead">Pruning KV frees DRAM, so more sequences fit at once (left) — capacity in the literal sense of concurrent users. And under a latency-percentile SLA (right), a hard-quality policy collapses to zero sustainable load at the tail, while an anytime-KV-truncate policy holds it — capacity measured under an SLO.</p>
+ <div class="exp">
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px" id="dualGrid">
+     <div><div class="sub" style="font-weight:600;color:var(--ink)">Concurrent sequences that fit 32 GB</div><div class="cvwrap"><canvas id="cvCap" width="440" height="300"></canvas></div>
+       <div class="leg"><span class="sw" style="background:var(--c3)"></span>full KV<span class="sw" style="background:var(--ok)"></span>57% cut</div></div>
+     <div><div class="sub" style="font-weight:600;color:var(--ink)">Sustainable load vs latency-percentile SLA</div><div class="cvwrap"><canvas id="cvQos" width="440" height="300"></canvas></div>
+       <div class="leg"><span class="sw" style="background:var(--c2)"></span>hard quality<span class="sw" style="background:var(--warn)"></span>anytime-truncate</div></div>
+   </div>
+   <div class="note" style="margin-top:16px"><strong>Tiered QoS (the sellable version).</strong> Give a premium class guaranteed resources and never degrade it; let an economy class absorb the truncation. At rising load the premium tier holds <strong>98–99.6%</strong> on-time while economy degrades gracefully (on-time 98%→56%, Δppl 0.6%→14%). Radiologist reads at full fidelity; photo-touch-up bends. Same silicon, two price points.</div>
+ </div>
+
+ <h2><span class="n">07</span>PPA — cost and energy per token, from the product sheets</h2>
+ <p class="lead">The question that decides adoption: <strong>$/token</strong> and <strong>joules/token</strong>. Below, Llama-3-70B decode serving (batch 32, 8&nbsp;K), with each system's throughput derived from its <em>datasheet aggregate memory bandwidth</em> under the same efficiency η — so it is one consistent bandwidth-bound model, not cherry-picked vendor benchmarks. CapEx amortized 3-year 24/7 at 85% utilization, electricity $0.10/kWh, PUE 1.3. Model: <code>blackhole_ppa.py</code>.</p>
+ <div class="finds">
+   <div class="fc"><div class="fn">$/TOKEN — LEADER</div><div class="big">$0.55<span style="font-size:15px">/M</span></div><div class="lab">TT Galaxy Blackhole + our technique — <strong>~1.9× cheaper</strong> than the best NVIDIA part (B200, $1.07/M). Low CapEx × the ~2× throughput.</div></div>
+   <div class="fc"><div class="fn">SAME-BOX RATIO</div><div class="big">2.07×</div><div class="lab">our technique <strong>halves both</strong> $/token and J/token on the identical box — a ratio independent of η and of every cross-vendor number.</div></div>
+   <div class="fc"><div class="fn">J/TOKEN — COMPETITIVE</div><div class="big">3.5 J</div><div class="lab">beats DGX H100 (3.8 J) but <strong>not B200 (2.2 J)</strong>. HBM on an advanced node is more energy-efficient per byte; throttling narrows, doesn't erase, that gap.</div></div>
+   <div class="fc"><div class="fn">VERDICT</div><div class="big">$/tok: yes<br>PPA: no</div><div class="lab">plausibly <strong>king of $/token</strong> for long-context serving; <strong>not</strong> king of PPA overall — NVIDIA leads energy, raw performance, and area.</div></div>
+ </div>
+ <table>
+   <tr><th>System (Llama-70B, batch 32, 8K)</th><th>CapEx</th><th>agg tok/s</th><th>$ / M tokens</th><th>J / token</th></tr>
+   <tr><td>TT Galaxy Blackhole — baseline</td><td>$110 k</td><td>1,635</td><td>$1.15</td><td>7.3</td></tr>
+   <tr><td>NVIDIA DGX H100 (8 GPU)</td><td>~$300 k</td><td>2,675</td><td>$1.56</td><td>3.8</td></tr>
+   <tr><td>NVIDIA DGX B200 (8 GPU)</td><td>~$500 k</td><td>6,388</td><td>$1.07</td><td>2.2</td></tr>
+   <tr><td><strong>TT Galaxy Blackhole + our technique</strong></td><td>$110 k</td><td>3,385</td><td class="ok"><strong>$0.55</strong></td><td><strong>3.5</strong></td></tr>
+ </table>
+ <div class="note"><strong>The defensible sentence.</strong> “On cost-per-token for long-context serving, this architecture plus the memory-reduction technique is a genuine leader — roughly 2× cheaper than NVIDIA’s best. On energy-per-token it is competitive, not dominant; HBM parts still lead there. It is <em>not</em> ‘king of PPA’ across the board.” Conceding energy and area is what makes the $/token win credible to a silicon audience.</div>
+ <div class="note"><strong>Robust vs uncertain — know which is which.</strong> <em>Robust:</em> the same-box 2.07× (and therefore the halving of $/token and J/token) is a ratio — no cross-vendor number, no η, enters it. <em>Uncertain:</em> the cross-vendor absolutes. I derived every system's throughput from its datasheet aggregate bandwidth rather than trusting published benchmarks (some vendor throughput claims are unverified and even contradict bandwidth physics). And the fair fight is our <strong>hardware-enforced</strong> reduction vs NVIDIA’s <strong>best software</strong> KV methods (paged-attention, KV-quant, speculative decode) — the architectural edge is that a GPU still <em>reads then discards</em>, while enforce-at-memory never moves the bytes.</div>
+
+ <h2><span class="n">08</span>Honesty — the bounds this model states out loud</h2>
+ <p>This is a first-order model: absolute tokens/s are directional (a cycle-accurate model refines constants, not conclusions); the shapes and crossovers are the claim. What it will <em>not</em> let you overclaim:</p>
+ <div class="note">
+ <strong>1. Single-chip capacity caps KV share ~78%.</strong> Weights (~7 GB) plus resident KV must fit 32 GB, so KV can never exceed ~78% of reads on one chip — the ~85–95% KV-share regime is a <em>multi-chip</em> case (KV sharded over the fabric), deferred here, not assumed.<br>
+ <strong>2. The 2–3× is decode-heavy serving.</strong> Section 04 is the boundary: short-prompt-huge-output (reasoning, agentic, code) is ~100% decode and gets the full gain; encode/embedding and classify are prefill-dominated and get little. Training is compute-bound and out of scope.<br>
+ <strong>3. Capacity is not free compute.</strong> The MAC array is sized for prefill/training; decode leaves it ~1–2% used because it is bandwidth-bound. The gain comes from moving fewer bytes within a fixed bandwidth budget — and argues for decode-specialized silicon that rebalances area from MACs toward memory, not for adding MACs.<br>
+ <strong>4. Quality is the ceiling, measured.</strong> The cut→quality curve is a real model (Qwen2.5-1.5B / WikiText-2), not an assumption — directional for a 70B/128K deployment, not a datasheet guarantee.
+ </div>
+
+ <h2><span class="n">09</span>How to read this — method &amp; where microarchitecture enters</h2>
+ <p class="lead">Two questions a silicon architect will ask, answered up front.</p>
+
+ <h3>“Is this static capacity analysis?”</h3>
+ <p>Yes — the headline results are <strong>static capacity analysis</strong>: steady-state resource-balance (roofline), not cycle- or event-accurate simulation. On the ladder <em>static peak → contention sim → RTL co-sim</em>, this is the first rung, deliberately. The roofline core (time = bytes ÷ bandwidth, throughput = BW ÷ bytes-per-token, max-batch = DRAM ÷ footprint) has no time axis, no transients, no warmup; it assumes a full pipeline, uniformly achievable bandwidth (folded into η), and compute overlapped behind memory. Two pieces <em>do</em> add dynamics: the QoS panel is a stochastic M/G/1 queueing sim (it produces the tail static analysis can’t), and the race is a deterministic scheduler (arrivals, admission, changing batch) wrapped around a static per-step kernel. None of it models memory-controller queuing, bank conflicts, refresh, or NoC congestion over time — that is the next rung and needs the internals below. Static is the right tool here because the claim is a <em>ratio</em> at matched operating points, and decode is a near-steady-state streaming workload; the omitted dynamics hit both sides of an apples-to-apples roughly equally and cancel.</p>
+
+ <h3>“How did you get a result without core/thread, tensor, NoC, TCM detail?”</h3>
+ <p>Because the model consumes only <strong>three datasheet numbers</strong> — DRAM bandwidth, DRAM capacity, and (loosely) peak FP8 to locate the ridge — plus closed-form byte/FLOP accounting. Everything you listed lives inside the single efficiency factor <strong>η = achieved ÷ peak bandwidth</strong>: core and thread count, the matrix engine, the NoC/bus fabric, TCM/L1, kernel and scheduler overhead. Since the apples-to-apples is the same silicon running the same stack, <strong>η is identical on both sides and divides out</strong> — the speedup is bytes-baseline ÷ bytes-throttled, pure workload arithmetic. And decode runs the compute fabric at ~1–2% utilization (≈500× below the ridge), so its exact capability doesn’t gate decode throughput anyway. I <em>calibrated</em> η to Tenstorrent’s published 350 tok/s/user rather than deriving it — precisely because I don’t have the internals. What those internals <em>would</em> change:</p>
+ <table>
+   <tr><th>Datasheet detail</th><th>What it sets</th><th>Does it move the decode 2× ratio?</th></tr>
+   <tr><td>Core / thread count</td><td>Prefill throughput; whether enough streams are in flight to hide the just-in-time KV gather</td><td>No — refines an assumption (“enough threads”), not the byte ratio</td></tr>
+   <tr><td>Tensor / matrix engine</td><td>Peak FLOPS → ridge location; cost of the KV criticality scoring</td><td>No — decode is 500× below the ridge; scoring runs on the idle array</td></tr>
+   <tr><td>NoC / bus fabric</td><td>On-chip movement; whether the KV gather &amp; compressed-residency have headroom</td><td>Cancels for DRAM-bound throughput; <strong>does</strong> gate the on-chip residency embodiment</td></tr>
+   <tr><td>TCM / L1 (~180 MB agg)</td><td>Staging capacity — whether selected KV pages + summaries fit on-chip</td><td>Not the throughput ratio; it is where the residency mechanism’s real cost lives</td></tr>
+ </table>
+ <div class="note">So the <strong>2× is robust</strong> — it survives not knowing the internals, because it is a bandwidth-bound ratio in a regime where the compute fabric is idle and η cancels. The <strong>absolute throughput</strong> and the <strong>on-chip mechanism</strong> (residency, gather, precision-format mapping) are where NoC/TCM/tensor detail would refine or challenge the picture — that is the cycle-accurate / RTL co-sim layer this model is the front-end to, not a substitute for.</div>
+
+ <div class="foot">
+   First-order full-system model · compute die + memory die on a Tenstorrent Blackhole-class chip (p150a: 512 GB/s GDDR6, 32 GB, ~300 W, ~745 TFLOPS FP8; Galaxy: 32 chips, 16 TB/s, 1 TB, 23 PFLOPS FP8). Reference engine: <code>blackhole_sysmodel.py</code>, <code>blackhole_qos.py</code>, <code>blackhole_e2e.py</code>, <code>blackhole_datasheet.py</code>, <code>blackhole_ppa.py</code>. Quality from the Quest study (Qwen2.5-1.5B / WikiText-2). Method: static capacity analysis (roofline) + stochastic queueing + a datasheet-calibrated scheduler. Specs from public Tenstorrent documentation, the newsroom DeepSeek-R1 figures, and teardowns; verify against the vendor datasheet before quoting.<br>
+   James Chou · <a href="study.html">Silicon study</a> · <a href="https://github.com/jimchakra/AI" target="_blank" rel="noopener">github.com/jimchakra/AI</a>
+ </div>
+</main>
+<script>
+// ---------------- byte model (mirrors blackhole_sysmodel.py) ----------------
+const L=32,dmods=4096,NQ=32,NKV=8,HD=128,DFF=14336, BW=512e9, DRAM=32e9, TDP=300;
+const E_DRAM=16e-12, E_FLOP=0.4e-12;
+const PARAMS=((dmods*NQ*HD)+(2*dmods*NKV*HD)+(NQ*HD*dmods)+(3*dmods*DFF))*L; // ~6.98e9
+const BPW=1.0; // FP8 weights
+const S={kvB:2.0, fp8:745e12};          // live knobs
+function kvTok(){return 2*NKV*HD*L*S.kvB;}          // bytes/token all layers
+function bytesStep(B,ctx,fkv,fw){
+  const wf=PARAMS*BPW, kf=B*ctx*kvTok();
+  const w=wf*(1-fw), kv=kf*(1-fkv), summ=(fkv>0? kf/16:0);
+  return {wf,kf,w,kv,summ,total:w+kv+summ};
+}
+function flopsStep(B,ctx){return 2*PARAMS*B + 2*(2*B*NQ*HD*ctx*L);}
+function stp(B,ctx,fkv,fw){
+  const by=bytesStep(B,ctx,fkv,fw), fl=flopsStep(B,ctx);
+  const tmem=by.total/BW, tcmp=fl/S.fp8, t=Math.max(tmem,tcmp);
+  const emove=by.total*E_DRAM, eflop=fl*E_FLOP, estat=TDP*t*0.30;
+  return {t,tmem,tcmp,memBound:tmem>=tcmp,ai:fl/by.total,toks:B/t,
+          etok:(emove+eflop+estat)/B, kvShare:by.kf/(by.wf+by.kf), by, fl};
+}
+function maxBatch(ctx,keep){const per=ctx*kvTok()*keep; return Math.max(1,Math.floor((DRAM-PARAMS*BPW)/per));}
+function serving(ctx,fkv,fw){
+  const B0=maxBatch(ctx,1), B1=maxBatch(ctx,1-fkv);
+  const r0=stp(B0,ctx,0,0), r1=stp(B1,ctx,fkv,fw);
+  return {B0,B1,batchGain:B1/B0,gain:r1.toks/r0.toks,tok0:r0.toks,tok1:r1.toks,
+          eGain:r0.etok/r1.etok, ai0:r0.ai, ai1:r1.ai};
+}
+const RIDGE=()=>S.fp8/BW;
+// Quest measured quality: read_fraction -> Δppl%
+const QF=[1,0.749,0.434,0.229,0.115,0], QQ=[0,0.12,0.97,4.09,12.97,30];
+function qcost(f){f=Math.max(0,Math.min(1,f));for(let i=0;i<QF.length-1;i++){const hi=QF[i],lo=QF[i+1];if(f<=hi&&f>=lo){const t=hi>lo?(hi-f)/(hi-lo):0;return QQ[i]+t*(QQ[i+1]-QQ[i]);}}return 0;}
+const FW=0.13; // weight read-mask (down-projection), overall weight-read fraction removed
+// end-to-end
+function tPrefill(P){const fl=2*PARAMS*P+2*(2*NQ*HD*P*P*L), by=PARAMS*BPW+P*kvTok();return Math.max(fl/S.fp8,by/BW);}
+function tDecode(P,G){const tb=G*PARAMS*BPW + kvTok()*(G*P+G*(G-1)/2);return tb/BW;}
+// embedded QoS reference (from blackhole_qos.py Monte-Carlo)
+const QOS={tgt:[90,95,99,99.5,99.8,99.9], A:[6.74,5.30,1.88,0,0,0], B:[14.13,11.36,7.29,5.81,4.08,3.07]};
+
+// ---------------- canvas helpers ----------------
+function setup(cv){const dpr=window.devicePixelRatio||1;const w=cv.width,h=cv.height;
+  cv.style.height=(h/ (cv.width/cv.clientWidth||1))+'px'; // keep aspect
+  const g=cv.getContext('2d'); g.save(); return {g,w,h};}
+function clr(g,w,h){g.clearRect(0,0,w,h);}
+function line(g,pts,col,wid){g.strokeStyle=col;g.lineWidth=wid||2;g.beginPath();pts.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.stroke();}
+function dot(g,x,y,r,col){g.fillStyle=col;g.beginPath();g.arc(x,y,r,0,7);g.fill();g.strokeStyle='#fff';g.lineWidth=2;g.stroke();}
+function txt(g,s,x,y,col,sz,al){g.fillStyle=col;g.font=(sz||12)+'px -apple-system,Arial';g.textAlign=al||'left';g.fillText(s,x,y);}
+const AX='#93a1b0', GD='#e4e9ee', ACC='#43648f', OK='#2e7d5b', WARN='#8a5a1a', BAD='#a4443a', C2='#3c597f', C3='#88a4c6', MUTED='#6a757f';
+
+// ---------------- section 02: roofline ----------------
+function drawRoof(){const cv=document.getElementById('cvRoof');const {g,w,h}=setup(cv);clr(g,w,h);
+  const mL=58,mR=18,mT=22,mB=40, pw=w-mL-mR, ph=h-mT-mB;
+  const xlo=Math.log10(0.3), xhi=Math.log10(5000), ylo=Math.log10(1), yhi=Math.log10(S.fp8/1e12*1.6);
+  const X=v=>mL+(Math.log10(v)-xlo)/(xhi-xlo)*pw, Y=v=>mT+ph-(Math.log10(v)-ylo)/(yhi-ylo)*ph;
+  // grid + axes
+  g.strokeStyle=GD;g.lineWidth=1;
+  [1,10,100,1000].forEach(v=>{const yy=Y(v);g.beginPath();g.moveTo(mL,yy);g.lineTo(w-mR,yy);g.stroke();txt(g,v+'',mL-6,yy+3,AX,10,'right');});
+  [1,10,100,1000].forEach(v=>{const xx=X(v);g.beginPath();g.moveTo(xx,mT);g.lineTo(xx,mT+ph);g.stroke();txt(g,v+'',xx,mT+ph+14,AX,10,'center');});
+  txt(g,'arithmetic intensity  (FLOP/byte)',mL+pw/2,h-6,AX,11,'center');
+  g.save();g.translate(14,mT+ph/2);g.rotate(-Math.PI/2);txt(g,'achievable TFLOPS',0,0,AX,11,'center');g.restore();
+  // shaded memory-bound region
+  g.fillStyle='rgba(67,100,143,.05)';g.fillRect(mL,mT,X(RIDGE())-mL,ph);
+  // roofline
+  const pts=[];for(let lx=xlo;lx<=xhi;lx+=0.03){const ai=Math.pow(10,lx);const perf=Math.min(S.fp8,BW*ai)/1e12;pts.push([X(ai),Y(perf)]);}
+  line(g,pts,ACC,2.4);
+  // ridge
+  g.strokeStyle=AX;g.setLineDash([5,4]);g.beginPath();g.moveTo(X(RIDGE()),mT);g.lineTo(X(RIDGE()),mT+ph);g.stroke();g.setLineDash([]);
+  txt(g,'ridge '+Math.round(RIDGE()).toLocaleString(),X(RIDGE())-6,mT+14,AX,10,'right');
+  txt(g,'memory-bound',mL+8,mT+16,ACC,11,'left');
+  // batch-1 decode points
+  [2048,8192,32768].forEach(ctx=>{const r=stp(1,ctx,0,0);const perf=(r.fl/r.t)/1e12;dot(g,X(r.ai),Y(perf),4,WARN);});
+  txt(g,'batch-1 decode',X(2.3)+6,Y(2.0)-6,WARN,11,'left');
+  // prefill point (compute-bound)
+  {const P=2048;const fl=2*PARAMS*P+2*(2*NQ*HD*P*P*L), by=PARAMS*BPW+P*kvTok();const ai=fl/by;const perf=Math.min(S.fp8,BW*ai)/1e12;dot(g,X(ai),Y(perf),6,BAD);txt(g,'prefill ~100% MFU',X(ai)-6,Y(perf)+16,BAD,11,'right');}
+  // current serving point
+  const B=ST.rb;const fit=maxBatch(8192,1);const r=stp(B,8192,0,0);const perf=(r.fl/r.t)/1e12;
+  dot(g,X(r.ai),Y(perf),7,OK);txt(g,'serving B='+B,X(r.ai)+10,Y(perf)+4,OK,12,'left');
+}
+
+// ---------------- section 03: cut -> capacity ----------------
+function drawCut(){const cv=document.getElementById('cvCut');const {g,w,h}=setup(cv);clr(g,w,h);
+  const ctx=[4096,8192,16384,32768,131072][ST.cs];
+  const mL=48,mR=16,mT=16,mB=34, pw=w-mL-mR, ph=h-mT-mB;
+  // compute gain curve over cut 0..0.9
+  const xs=[];let gmax=1;for(let c=0;c<=0.9001;c+=0.02){const gv=serving(ctx,c,FW).gain;xs.push([c,gv]);gmax=Math.max(gmax,gv);}
+  gmax=Math.max(gmax,3);
+  const X=c=>mL+c/0.9*pw, Y=v=>mT+ph-(v-1)/(gmax-1)*ph;
+  // quality bands in cut-space: safe cut<=0.566 (Δppl~1), aggressive<=0.771 (~4), else lossy
+  const bands=[[0,0.566,'rgba(46,125,91,.10)'],[0.566,0.771,'rgba(138,90,26,.12)'],[0.771,0.9,'rgba(164,68,58,.12)']];
+  bands.forEach(b=>{g.fillStyle=b[2];g.fillRect(X(b[0]),mT,X(b[1])-X(b[0]),ph);});
+  // grid
+  g.strokeStyle=GD;g.lineWidth=1;for(let v=1;v<=gmax;v+=(gmax>6?2:1)){const yy=Y(v);g.beginPath();g.moveTo(mL,yy);g.lineTo(w-mR,yy);g.stroke();txt(g,v.toFixed(0)+'×',mL-6,yy+3,AX,10,'right');}
+  for(let c=0;c<=0.9;c+=0.15){const xx=X(c);txt(g,Math.round(c*100)+'%',xx,mT+ph+14,AX,10,'center');}
+  txt(g,'KV read cut',mL+pw/2,h-4,AX,11,'center');
+  // curve
+  line(g,xs.map(p=>[X(p[0]),Y(p[1])]),ACC,2.4);
+  // current point
+  const cv0=ST.fkv/100;const gv=serving(ctx,cv0,FW).gain;const dq0=qcost(1-cv0);const col=dq0<=1.1?OK:dq0<=4.5?WARN:BAD;
+  dot(g,X(cv0),Y(gv),7,col);txt(g,gv.toFixed(2)+'×',X(cv0),Y(gv)-12,col,13,'center');
+}
+
+// ---------------- section 04: e2e bar ----------------
+function drawE2E(){const cv=document.getElementById('cvE2E');const {g,w,h}=setup(cv);clr(g,w,h);
+  const P=ST.pp,G=ST.gg;const tp=tPrefill(P),td=tDecode(P,G),tot=tp+td;
+  const mL=10,mR=10,y=34,bh=42,bw=w-mL-mR;
+  const wp=bw*tp/tot, wd=bw*td/tot;
+  g.fillStyle=BAD;g.fillRect(mL,y,wp,bh);g.fillStyle=ACC;g.fillRect(mL+wp,y,wd,bh);
+  g.fillStyle='#fff';g.font='12px Arial';g.textAlign='center';
+  if(wp>44)g.fillText('prefill '+(tp/tot*100).toFixed(tp/tot<0.1?1:0)+'%',mL+wp/2,y+26);
+  if(wd>60)g.fillText('decode '+(td/tot*100).toFixed(1)+'%',mL+wp+wd/2,y+26);
+  txt(g,'total wall-clock '+(tot*1e3<1000?(tot*1e3).toFixed(0)+' ms':(tot).toFixed(1)+' s'),mL,y-8,AX,11,'left');
+}
+
+// ---------------- section 05: capacity + qos ----------------
+function drawCap(){const cv=document.getElementById('cvCap');const {g,w,h}=setup(cv);clr(g,w,h);
+  const ctxs=[4096,8192,16384,32768,65536,131072];
+  const full=ctxs.map(c=>maxBatch(c,1)), cut=ctxs.map(c=>maxBatch(c,0.43));
+  const mL=40,mR=12,mT=14,mB=30,pw=w-mL-mR,ph=h-mT-mB;const ymax=Math.max(...full,...cut);
+  const X=i=>mL+i/(ctxs.length-1)*pw, Y=v=>mT+ph-v/ymax*ph;
+  g.strokeStyle=GD;for(let k=0;k<=4;k++){const v=ymax*k/4,yy=Y(v);g.beginPath();g.moveTo(mL,yy);g.lineTo(w-mR,yy);g.stroke();txt(g,Math.round(v)+'',mL-5,yy+3,AX,9,'right');}
+  ctxs.forEach((c,i)=>txt(g,(c/1024)+'K',X(i),mT+ph+13,AX,9,'center'));
+  line(g,cut.map((v,i)=>[X(i),Y(v)]),OK,2.2);line(g,full.map((v,i)=>[X(i),Y(v)]),C3,2.2);
+  cut.forEach((v,i)=>dot(g,X(i),Y(v),3.5,OK));full.forEach((v,i)=>dot(g,X(i),Y(v),3.5,C3));
+  txt(g,'context',mL+pw/2,h-3,AX,10,'center');
+}
+function drawQos(){const cv=document.getElementById('cvQos');const {g,w,h}=setup(cv);clr(g,w,h);
+  const mL=40,mR=12,mT=14,mB=30,pw=w-mL-mR,ph=h-mT-mB;const ymax=Math.max(...QOS.B)*1.05;
+  const X=i=>mL+i/(QOS.tgt.length-1)*pw, Y=v=>mT+ph-v/ymax*ph;
+  g.strokeStyle=GD;for(let k=0;k<=4;k++){const v=ymax*k/4,yy=Y(v);g.beginPath();g.moveTo(mL,yy);g.lineTo(w-mR,yy);g.stroke();txt(g,v.toFixed(0),mL-5,yy+3,AX,9,'right');}
+  QOS.tgt.forEach((t,i)=>txt(g,'P'+t,X(i),mT+ph+13,AX,9,'center'));
+  // fill between
+  g.fillStyle='rgba(138,90,26,.08)';g.beginPath();QOS.B.forEach((v,i)=>i?g.lineTo(X(i),Y(v)):g.moveTo(X(i),Y(v)));for(let i=QOS.A.length-1;i>=0;i--)g.lineTo(X(i),Y(QOS.A[i]));g.fill();
+  line(g,QOS.B.map((v,i)=>[X(i),Y(v)]),WARN,2.2);line(g,QOS.A.map((v,i)=>[X(i),Y(v)]),C2,2.2);
+  QOS.B.forEach((v,i)=>dot(g,X(i),Y(v),3.5,WARN));QOS.A.forEach((v,i)=>dot(g,X(i),Y(v),3.5,C2));
+  txt(g,'hard quality → 0 at the tail',X(3),Y(QOS.A[2])-8,C2,10,'left');
+  txt(g,'chunks/s',mL+pw/2,h-3,AX,10,'center');
+}
+
+// rounded rect
+function rr(g,x,y,w,h,r){r=Math.max(0,Math.min(r,h/2,w/2));g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();g.fill();}
+
+// ---------------- section 02a: decode-token anatomy (functional breakdown) ----------------
+const SG={attn:'#3c597f',up:'#6f93bb',dn:'#a9c0da',kv:'#c17f4a',tax:'#e0b07a'};
+function fSegs(B,thr){
+  const aW=(dmods*NQ*HD+2*dmods*NKV*HD+NQ*HD*dmods)*L*BPW, upW=(2*dmods*DFF)*L*BPW, dnW=(DFF*dmods)*L*BPW, kv=8192*kvTok();
+  const s=[{n:'attn',c:SG.attn,b:aW/B,sh:false},{n:'FFN↑',c:SG.up,b:upW/B,sh:false},
+           {n:'FFN↓',c:SG.dn,b:(thr?dnW*0.5:dnW)/B,sh:thr},{n:'KV',c:SG.kv,b:thr?kv*0.43:kv,sh:thr}];
+  if(thr) s.push({n:'tax',c:SG.tax,b:kv/16,sh:false});
+  return s;
+}
+function drawGbus(){const cv=document.getElementById('cvGbus');const {g,w,h}=setup(cv);clr(g,w,h);
+  const B0=maxBatch(8192,1), B1=maxBatch(8192,0.43);
+  const s0=fSegs(B0,false), s1=fSegs(B1,true);
+  const tot0=s0.reduce((a,s)=>a+s.b,0), tot1=s1.reduce((a,s)=>a+s.b,0);
+  const mL=14,mR=140,mT=22, pw=w-mL-mR, scale=pw/tot0, barH=54;
+  function bar(y,segs,tot,lab){
+    txt(g,lab,mL,y-6,'#2f3e50',12.5,'left');
+    let x=mL;
+    segs.forEach(s=>{const sw=s.b*scale; g.fillStyle=s.c; rr(g,x,y,Math.max(1.5,sw-2),barH,3);
+      const light=(s.c===SG.dn||s.c===SG.tax); if(sw>34){txt(g,Math.round(s.b/tot*100)+'%',x+sw/2,y+barH*0.44,light?'#33404d':'#fff',11.5,'center');
+        txt(g,s.n+(s.sh?' ▼':''),x+sw/2,y+barH*0.78,light?'#33404d':'#fff',10,'center');}
+      x+=sw;});
+    txt(g,(tot/1e9).toFixed(2)+' GB/tok',mL+tot*scale+8,y+barH*0.6,'#2f3e50',12.5,'left');
+  }
+  bar(mT+6,s0,tot0,'Baseline · full KV · batch '+B0);
+  bar(mT+6+barH+40,s1,tot1,'Throttled · 57% KV + down-mask · batch '+B1);
+  txt(g,(tot0/tot1).toFixed(2)+'× tokens/second on the same 512 GB/s bus  (KV ▼ and FFN↓ ▼ are what shrink)',mL,mT+6+2*barH+40+22,OK,12.5,'left');
+}
+
+// ---------------- section 02b: apples-to-apples RACE (datasheet-calibrated, animated) ----------------
+const JB={rag:'#c17f4a',reason:'#7a5ea8',chat:'#4c6f9c',cls:'#88a4c6',chat2:'#6f93bb'};
+const GBW=16e12, GDRAM=1e12, WD=68e9, KVT=2*8*128*80*2;   // Galaxy datasheet · Llama-3-70B (FP8 wt, FP16 KV)
+const SLO=100, WIN=3200;                                   // premium per-token SLO (ms) · sim window (ms)
+let RETA=0.48;                                             // achieved-BW efficiency (calibrated to DeepSeek 350 tok/s/user)
+// long-context serving mix (the regime where decode/KV dominates — the stated domain).
+// premium is a minority of traffic (~1 in 8), as in real serving.
+const ECON=[{S:32768,G:90,c:JB.rag,t:'RAG 32K'},{S:16384,G:150,c:JB.chat2,t:'chat 16K'},
+            {S:24576,G:80,c:JB.chat,t:'doc-QA 24K'},{S:32768,G:60,c:JB.cls,t:'summarize 32K'}];
+const PREM={S:8192,G:220,c:JB.reason,t:'reason ⋆'};
+function makeStream(){const a=[];let t=0;for(let i=0;i<220;i++){t+=7+(i*29%16);
+  const p=(i%8===3); const b=p?PREM:ECON[i%ECON.length];
+  a.push({...b,tier:p?'P':'E',a:t,id:i});}return a;}
+function newSrv(thr){return {thr,t:0,toks:0,done:0,pO:0,pT:0,act:[],jobs:makeStream().map(j=>({...j,rem:j.G}))};}
+function advSrv(sv,upto){let guard=0;const Wb=sv.thr?WD*0.87:WD;
+  // both systems hold the SAME per-token latency SLO (admission-control to dt<=SLO);
+  // the throttled one moves fewer bytes/token, so it fits ~2x the work under the same latency.
+  const budget=Math.min(GDRAM-Wb,(SLO/1000)*RETA*GBW-Wb);
+  while(sv.t<upto && guard++<20000){
+    const pend=sv.jobs.filter(j=>j.rem>0 && j.a<=sv.t);
+    if(!pend.length){const fut=sv.jobs.filter(j=>j.rem>0);if(!fut.length){sv.t=upto;break;}sv.t=Math.min(upto,Math.min(...fut.map(j=>j.a)));continue;}
+    // premium first (priority), then FIFO, admit while KV budget holds
+    const ordered=[...pend].sort((a,b)=>(a.tier==='P'?0:1)-(b.tier==='P'?0:1));
+    let cap=budget, act=[];
+    for(const j of ordered){const keep=sv.thr?(j.tier==='P'?1:0.43):1;const need=j.S*KVT*keep;if(need<=cap){act.push(j);cap-=need;}}
+    if(!act.length)act.push(pend[0]);
+    let kv=0;act.forEach(j=>kv+=j.S*KVT*(sv.thr?(j.tier==='P'?1:0.43):1));
+    const dt=Math.max(1,(Wb+kv)/(RETA*GBW)*1000);
+    act.forEach(j=>{j.rem--;sv.toks++;if(j.tier==='P'){sv.pT++;if(dt>SLO*1.03)sv.pO++;}if(j.rem<=0)sv.done++;});
+    sv.act=act; sv.t+=dt;
+  }
+}
+let RACE=null, raf=null, playing=false, t0race=0;
+const SPEED=WIN/9;  // play the 3.2 s window over ~9 s real
+function initRace(){RACE={A:newSrv(false),B:newSrv(true),simT:0};}
+function raceFrame(ts){ if(!t0race)t0race=ts; const real=(ts-t0race)/1000; RACE.simT=Math.min(WIN,real*SPEED);
+  advSrv(RACE.A,RACE.simT); advSrv(RACE.B,RACE.simT); drawRace();
+  if(RACE.simT<WIN && playing){raf=requestAnimationFrame(raceFrame);} else {playing=false; setPlayLabel();} }
+function startRace(){ if(playing)return; if(!RACE||RACE.simT>=WIN)initRace(); t0race=0; playing=true; setPlayLabel(); raf=requestAnimationFrame(raceFrame); }
+function pauseRace(){ playing=false; if(raf)cancelAnimationFrame(raf); setPlayLabel(); }
+function setPlayLabel(){const el=document.getElementById('segPlay');if(!el)return;el.innerHTML='';
+  const b=document.createElement('button');b.textContent=playing?'❚❚ pause':(RACE&&RACE.simT>=WIN?'↻ replay':'▶ play');
+  b.onclick=()=>{playing?pauseRace():startRace();};el.appendChild(b);}
+function panel(g,sv,x,y,w,h,title,other){
+  g.fillStyle='#fff';rr(g,x,y,w,h,10);g.strokeStyle='#d7e0ea';g.lineWidth=1;g.beginPath();g.moveTo(x+10,y);g.arcTo(x+w,y,x+w,y+h,10);g.arcTo(x+w,y+h,x,y+h,10);g.arcTo(x,y+h,x,y,10);g.arcTo(x,y,x+w,y,10);g.stroke();
+  txt(g,title,x+14,y+20,'#2f3e50',13,'left');
+  const tps=sv.t>0?sv.toks/(sv.t/1000):0, pOk=sv.pT?(1-sv.pO/sv.pT)*100:100;
+  txt(g,Math.round(sv.toks).toLocaleString(),x+14,y+54,ACC,26,'left'); txt(g,'tokens delivered',x+14,y+70,MUTED,11,'left');
+  txt(g,Math.round(tps).toLocaleString()+' tok/s',x+w-14,y+40,'#2f3e50',14,'right');
+  txt(g,sv.done+' jobs done',x+w-14,y+58,MUTED,11.5,'right');
+  txt(g,'premium SLO '+pOk.toFixed(0)+'%',x+w-14,y+74,pOk>90?OK:BAD,11.5,'right');
+  // active-batch strip (job KV footprints)
+  const sy=y+88, sh=h-100, sx=x+14, sw=w-28;
+  txt(g,'active batch — DRAM occupancy ('+sv.act.length+' jobs)',sx,sy-4,AX,10,'left');
+  const totKV=GDRAM-(sv.thr?WD*0.87:WD); let cx=sx;
+  sv.act.forEach(j=>{const keep=sv.thr?(j.tier==='P'?1:0.43):1;const frac=j.S*KVT*keep/totKV;const bw=frac*sw;
+    g.fillStyle=j.c;rr(g,cx,sy+6,Math.max(1,bw-1),sh-10,2);
+    if(j.tier==='P'){g.strokeStyle='#7a5ea8';g.lineWidth=2;g.strokeRect(cx,sy+6,Math.max(1,bw-1),sh-10);} cx+=bw;});
+  g.strokeStyle='#e4e9ee';g.lineWidth=1;g.strokeRect(sx,sy+6,sw,sh-10);
+}
+function drawRace(){const cv=document.getElementById('cvRace');const {g,w,h}=setup(cv);clr(g,w,h);
+  if(!RACE)initRace();
+  const gap=18, pw=(w-gap)/2, ph=h-40;
+  panel(g,RACE.A,0,30,pw,ph,'Baseline · stock',RACE.B);
+  panel(g,RACE.B,pw+gap,30,pw,ph,'Enhanced · mem-reduction + tiered KV throttle',RACE.A);
+  // header: clock + live ratio
+  const ratio=RACE.A.toks>0?RACE.B.toks/RACE.A.toks:1;
+  txt(g,'t = '+(RACE.simT/1000).toFixed(2)+' s / '+(WIN/1000).toFixed(1)+' s  (same wall-clock, both systems)',0,16,MUTED,11.5,'left');
+  txt(g,(ratio>=1?ratio.toFixed(2)+'× tokens':'—'),w-6,16,ratio>=1.9?OK:'#2f3e50',15,'right');
+}
+
+// ---------------- section 02b: deadline / QoS Gantt (schematic) ----------------
+function drawGqos(){const cv=document.getElementById('cvGqos');const {g,w,h}=setup(cv);clr(g,w,h);
+  const mL=64,mR=64,mT=10, pw=w-mL-mR, D=100, span=220, X=t=>mL+t/span*pw;
+  const reqs=[{a:0,c:18,k:52,cls:'E'},{a:14,c:18,k:30,cls:'P'},{a:28,c:18,k:112,cls:'E'},
+              {a:42,c:18,k:48,cls:'E'},{a:56,c:18,k:120,cls:'E'},{a:70,c:18,k:34,cls:'P'}];
+  const rowH=30, gap=11; let y=mT+8;
+  reqs.forEach((r,i)=>{
+    const prem=(r.cls==='P');
+    txt(g,'req '+(i+1)+(GQ.pol==='tier'?(prem?' ⋆P':' E'):''),mL-8,y+rowH*0.68,'#33404d',11.5,'right');
+    const xd=X(r.a+D); g.strokeStyle=BAD;g.setLineDash([3,3]);g.lineWidth=1;g.beginPath();g.moveTo(xd,y-1);g.lineTo(xd,y+rowH+1);g.stroke();g.setLineDash([]);
+    let kEff=r.k, degr=0;
+    const budget=D-r.c;
+    if(GQ.pol==='any'){ if(r.k>budget){degr=r.k-budget;kEff=budget;} }
+    else if(GQ.pol==='tier'){ if(!prem && r.k>budget){degr=r.k-budget;kEff=budget;} }
+    const x0=X(r.a), cw=r.c/span*pw;
+    g.fillStyle=C3;rr(g,x0,y,cw,rowH,4);
+    const kx=x0+cw;
+    const miss=(GQ.pol==='hard')&&(r.c+r.k>D);
+    let endT;
+    if(miss){const okw=Math.max(0,budget)/span*pw; g.fillStyle=ACC;rr(g,kx,y,okw,rowH,4);
+      const ov=(r.c+r.k-D)/span*pw; g.fillStyle=BAD;rr(g,kx+okw,y,ov,rowH,4); endT=r.a+r.c+r.k;}
+    else {const kw=kEff/span*pw; g.fillStyle=ACC;rr(g,kx,y,kw,rowH,4);
+      if(degr>0){const dw=degr/span*pw; g.fillStyle='rgba(138,90,26,.32)';rr(g,kx+kw,y,dw,rowH,4);} endT=r.a+r.c+kEff;}
+    let stt,scol;
+    if(miss){stt='MISS';scol=BAD;}
+    else if(degr>0){stt='bend −'+Math.round(degr/r.k*100)+'% KV';scol=WARN;}
+    else {stt=(GQ.pol==='tier'&&prem)?'ok · guaranteed':'ok';scol=OK;}
+    txt(g,stt,Math.min(X(endT),w-mR)+7,y+rowH*0.68,scol,10.5,'left');
+    y+=rowH+gap;
+  });
+  txt(g,'╌╌ deadline (arrival + SLO)',mL,y+6,BAD,11,'left');
+  const cap={hard:'Hard: two tail requests overrun — the hang.',any:'Anytime: tail requests read less KV to land on the deadline — bounded loss, no miss.',tier:'Tiered: premium (⋆P) guaranteed & never bends; economy absorbs the truncation.'}[GQ.pol];
+  txt(g,cap,mL+230,y+6,'#42525f',11.5,'left');
+}
+
+// ---------------- stats + wiring ----------------
+const ST={rb:23,fkv:57,cs:1,pp:1000,gg:500};
+const GQ={pol:'hard'};
+const CTXV=[4096,8192,16384,32768,131072], CTXL=['4K','8K','16K','32K','128K'];
+function tile(fn,big,lab){return `<div class="fc"><div class="fn">${fn}</div><div class="big">${big}</div><div class="lab">${lab}</div></div>`;}
+function fmtx(v){return v.toFixed(2)+'×';}
+function renderHero(){
+  const sv=serving(8192,0.57,FW);
+  document.getElementById('heroTiles').innerHTML=
+    tile('THROUGHPUT',fmtx(sv.gain),'more tokens/s per chip at ≤1% perplexity (8K serving). Up to ~2.9× at ~3%.')+
+    tile('CONCURRENCY',fmtx(sv.batchGain),'more simultaneous sequences fit in 32 GB — capacity in users per chip.')+
+    tile('EFFICIENCY',fmtx(sv.eGain),'more tokens per joule at fixed 300 W — ≈ half the energy, and TCO-$, per token.')+
+    tile('SLO-GOODPUT','∞','hard-quality latency guarantees collapse to 0 sustainable load past P99.5; anytime-truncate holds.');
+  document.getElementById('ridgeLbl').textContent='ridge '+Math.round(RIDGE()).toLocaleString()+' FLOP/byte';
+}
+function st(v,k,cls){return `<div class="stat ${cls||''}"><div class="v">${v}</div><div class="k">${k}</div></div>`;}
+function renderCut(){
+  const ctx=CTXV[ST.cs], c=ST.fkv/100;const sv=serving(ctx,c,FW);const dq=qcost(1-c);
+  const verdict=dq<=1.1?['safe','good']:dq<=4.5?['aggressive','warn']:['too lossy','bad'];
+  document.getElementById('fkvLab').textContent=ST.fkv+'%';
+  document.getElementById('csLab').textContent=CTXL[ST.cs];
+  document.getElementById('cutStats').innerHTML=
+    st(fmtx(sv.gain),'serving capacity','good')+
+    st(fmtx(sv.batchGain),'concurrent sequences')+
+    st(fmtx(sv.eGain),'tokens / joule')+
+    st(dq.toFixed(2)+'%','Δ perplexity',verdict[1])+
+    st(verdict[0],'quality verdict',verdict[1]);
+  drawCut();
+}
+function renderE2E(){
+  const P=ST.pp,G=ST.gg,c=ST.fkv/100;const tp=tPrefill(P),td=tDecode(P,G),fd=td/(tp+td);
+  const s=serving(CTXV[ST.cs],c,FW).gain;const e2e=1/((1-fd)+fd/s);
+  document.getElementById('pLab').textContent=P.toLocaleString();
+  document.getElementById('gLab').textContent=G.toLocaleString();
+  document.getElementById('e2eStats').innerHTML=
+    st((fd*100).toFixed(1)+'%','decode share of time',fd>0.9?'good':'')+
+    st(fmtx(s),'decode capacity gain','good')+
+    st(fmtx(e2e),'end-to-end speedup (Amdahl)',e2e>1.8?'good':'')+
+    st(td*1e3<1000?(td*1e3).toFixed(0)+' ms':(td).toFixed(1)+' s','decode wall-clock');
+  drawE2E();
+}
+function redrawAll(){renderHero();drawGbus();drawRace();drawGqos();drawRoof();renderCut();renderE2E();drawCap();drawQos();}
+
+// segmented knobs
+function seg(id,opts,cur,cb){const el=document.getElementById(id);el.innerHTML='';opts.forEach(o=>{const b=document.createElement('button');b.textContent=o.t;if(o.v===cur())b.className='on';b.onclick=()=>{cb(o.v);[...el.children].forEach(c=>c.className='');b.className='on';redrawAll();};el.appendChild(b);});}
+seg('segKV',[{t:'FP16',v:2},{t:'FP8',v:1}],()=>S.kvB,v=>S.kvB=v);
+seg('segFP',[{t:'745 TF',v:745e12},{t:'664 TF',v:664e12}],()=>S.fp8,v=>S.fp8=v);
+seg('segGq',[{t:'Hard',v:'hard'},{t:'Anytime-truncate',v:'any'},{t:'Tiered',v:'tier'}],()=>GQ.pol,v=>GQ.pol=v);
+// race controls
+initRace(); setPlayLabel(); setTimeout(startRace,500);   // autoplay the race once on load
+document.getElementById('etaLab').textContent='0.48';
+document.getElementById('eta').oninput=e=>{RETA=(+e.target.value)/100;document.getElementById('etaLab').textContent=RETA.toFixed(2);
+  if(!playing){initRace();advSrv(RACE.A,RACE.simT=WIN);advSrv(RACE.B,WIN);drawRace();}};
+// sliders
+function slide(id,cb){const el=document.getElementById(id);el.oninput=()=>{cb(+el.value);};}
+slide('rb',v=>{ST.rb=v;document.getElementById('rbLab').textContent=v;const fit=maxBatch(8192,1);document.getElementById('rbFit').textContent=v>fit?'(exceeds 32 GB — hypothetical)':'(fits 32 GB)';drawRoof();});
+slide('fkv',v=>{ST.fkv=v;renderCut();renderE2E();});
+slide('cs',v=>{ST.cs=v;renderCut();renderE2E();});
+slide('pp',v=>{ST.pp=v;renderE2E();});
+slide('gg',v=>{ST.gg=v;renderE2E();});
+// init labels
+document.getElementById('rbLab').textContent=ST.rb;document.getElementById('rbFit').textContent='(fits 32 GB)';
+redrawAll();
+</script>
+</body></html>

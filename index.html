@@ -60,6 +60,7 @@
       <li><a href="small-frees-big.html">Small Frees Big</a> — the thesis: why <em>data movement</em>, not arithmetic, sets the limit for inference.</li>
       <li><a href="study.html">Compute at the Memory Boundary</a> — the full study: thesis → filed patent → verified RTL → grounded synthesis → real-model validation.</li>
       <li><a href="graceful-degradation.html">Bend, don't break</a> — the systems lens: reliability past P99 and tiered QoS, with four live simulations.</li>
+      <li><a href="system-capacity.html">The bandwidth budget</a> — the numbers: a datasheet-calibrated full-system model showing &gt;2× decode capacity, with the $/token verdict and the method stated.</li>
       <li><a href="digital-twin.html">The digital twin, finally affordable</a> — the economics: why AI makes re-spin avoidance the default, not a luxury.</li>
       <li><a href="kv-selector-spec.html">KV-selector spec</a> — the coprocessor deep-dive (block &amp; timing diagrams, area/latency).</li>
       <li><a href="https://jimchakra.github.io/6G-NTN/6g_du_rd_ai.html">6G RU/DU study</a> — breadth: the same principles in a 200-core RAN SoC.</li>
@@ -82,6 +83,13 @@
       <div class="card-title">Bend, don&rsquo;t break <span class="arw">&#8594;</span></div>
       <div class="card-sub">Graceful degradation as a chip-design feature — reliability past P99 with no added area, worked through AI inference.</div>
       <p class="card-desc">A generic truth about complex chips on shared resources: you can&rsquo;t provision the P100 tail, because it lives in contention on shared compute, not the datapath. Build a throttle into the datapath and the same silicon stays reliable past P99 for free — and the headroom you reclaim becomes a tiered-QoS product. Four live explorers: token-deadline anytime degradation, serving-side admission control vs congestion collapse, the capacity-vs-tail-guarantee payoff sold as QoS, and the self-correcting speculative throttle. Plus a comparison of which degradation lever hurts least.</p>
+    </a>
+
+    <a class="card" href="system-capacity.html">
+      <div class="card-meta">Full-system model · datasheet-calibrated · interactive · new</div>
+      <div class="card-title">The bandwidth budget <span class="arw">&#8594;</span></div>
+      <div class="card-sub">Same silicon, everything else equal: &gt;2× decode capacity from moving fewer bytes — calibrated to Tenstorrent&rsquo;s published numbers.</div>
+      <p class="card-desc">A first-order full-system (compute die + memory die) model on a Blackhole-class chip, calibrated so the baseline reproduces Tenstorrent&rsquo;s published 350 tok/s/user on DeepSeek-R1. Live explorers: an animated apples-to-apples race, the roofline, cut&rarr;capacity, the prefill/decode split, an anatomy-of-a-token timing view, concurrency &amp; QoS, and a $/token &amp; J/token PPA verdict — king of $/token, honest about energy and area. States its own method (static capacity analysis) and where microarchitecture enters.</p>
     </a>
 
     <a class="card" href="small-frees-big.html">
