@@ -58,6 +58,7 @@
     <div class="path-lbl">New here — a suggested reading path</div>
     <ol>
       <li><a href="small-frees-big.html">Small Frees Big</a> — the thesis: why <em>data movement</em>, not arithmetic, sets the limit for inference.</li>
+      <li><a href="memory-wall.html">The array can't keep up</a> — the physics under the thesis: why memory bandwidth is bought with width and packaging, not clocked.</li>
       <li><a href="study.html">Compute at the Memory Boundary</a> — the full study: thesis → filed patent → verified RTL → grounded synthesis → real-model validation.</li>
       <li><a href="graceful-degradation.html">Bend, don't break</a> — the systems lens: reliability past P99 and tiered QoS, with four live simulations.</li>
       <li><a href="system-capacity.html">The bandwidth budget</a> — the numbers: a datasheet-calibrated full-system model showing &gt;2× decode capacity, with the $/token verdict and the method stated.</li>
@@ -97,6 +98,13 @@
       <div class="card-title">Small Frees Big <span class="arw">&#8594;</span></div>
       <div class="card-sub">Why data movement, not arithmetic, is the whole bill for AI inference — and the shape that follows.</div>
       <p class="card-desc">Rare earth isn't rare — you just pay to move mountains of ore for a trace of metal. Modern inference runs on the same economics: the arithmetic is nearly free, and moving the data is the whole bill. One argument in two moves — small, targeted compute is the hero, and the next move is pushing some of it onto the memory itself — the shape RAN reached first.</p>
+    </a>
+
+    <a class="card" href="memory-wall.html">
+      <div class="card-meta">Explainer · memory physics · new</div>
+      <div class="card-title">The array can&rsquo;t keep up <span class="arw">&#8594;</span></div>
+      <div class="card-sub">Interface speed is racing; the DRAM core has been flat for twenty years — why bandwidth is bought, not clocked.</div>
+      <p class="card-desc">The physical foundation under the data-movement thesis: the three &ldquo;bandwidths&rdquo; people conflate, why the DRAM array core is stuck near ~50&nbsp;ns while per-pin rate, width, and modulation climb ~100×, why 224G SerDes and co-packaged optics are a different (scale-out) axis, and the huge <em>internal</em> bandwidth that near-memory compute exists to tap. Leaves exactly two durable moves — move fewer bytes, and compute before the pins.</p>
     </a>
 
     <a class="card" href="results.html">

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Array Can't Keep Up — Why Memory Bandwidth Is Bought, Not Clocked</title>
+<meta name="description" content="Interface speed is racing; the DRAM array core has been flat for twenty years. Why memory bandwidth is bought with width, packaging, and power — not clocked — and the two durable moves that leaves you: move fewer bytes, or compute before the pins.">
+<style>
+  :root{
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --serif:Georgia,"Iowan Old Style",Charter,"Times New Roman",serif;
+    --ink:#16191d; --ink2:#33393f; --body:#2c3238; --muted:#6a727a;
+    --rule:#e2e5e8; --page:#ffffff; --head:#2f3e50; --accent:#1f4e79;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--page);color:var(--body);font-family:var(--serif);line-height:1.6;font-size:16px}
+  .wrap{max-width:684px;margin:0 auto;padding:60px 24px 104px}
+  header.post{margin-bottom:8px}
+  h1{font-family:var(--sans);font-size:27px;line-height:1.2;letter-spacing:-.4px;color:var(--head);margin:0 0 12px;font-weight:700}
+  .dek{font-family:var(--sans);font-size:15.5px;color:#586470;margin:0 0 14px;font-weight:400;line-height:1.5}
+  .meta{font-family:var(--sans);font-size:11px;color:#8a929a;text-transform:uppercase;letter-spacing:1.2px;border-bottom:1px solid var(--rule);padding-bottom:18px;margin-bottom:14px}
+  .nav{font-family:var(--sans);font-size:12.5px;margin:0 0 28px}
+  .nav a{margin-right:14px}
+  h2{font-family:var(--sans);font-size:17px;line-height:1.3;color:var(--head);margin:38px 0 8px;font-weight:650;letter-spacing:-.1px}
+  p{margin:0 0 16px}
+  strong{color:var(--head);font-weight:700}
+  em{color:var(--ink2)}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid #c9d4de}
+  a:hover{border-bottom-color:var(--accent)}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;background:#eef1f4;padding:1px 5px;border-radius:4px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:26px 0 8px}
+  .tile{border:1px solid var(--rule);border-radius:11px;padding:14px 15px;background:#fff;font-family:var(--sans)}
+  .tile .v{font-size:22px;font-weight:700;color:var(--head);letter-spacing:-.5px;line-height:1.05}
+  .tile .k{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.4}
+  figure{margin:34px 0;width:min(94vw,980px);position:relative;left:50%;transform:translateX(-50%)}
+  .fig-inner{border:1px solid var(--rule);border-radius:10px;padding:18px 18px 8px;background:#fff;box-shadow:0 1px 4px rgba(20,25,30,.06)}
+  figure svg{width:100%;height:auto;display:block}
+  figcaption{font-family:var(--sans);max-width:640px;margin:12px auto 0;font-size:12.5px;color:var(--muted);text-align:center;font-style:italic}
+  .kick{border-left:3px solid var(--accent);padding:2px 0 2px 16px;margin:22px 0;font-family:var(--sans);font-size:15px;color:var(--ink2)}
+  .bio{font-family:var(--sans);margin-top:44px;padding-top:22px;border-top:1px solid var(--rule);font-size:14px;color:var(--muted);font-style:italic;line-height:1.6}
+  .src{font-family:var(--sans);font-size:12px;color:#8a929a;margin-top:10px}
+  @media(max-width:640px){ body{font-size:15.5px} h1{font-size:23px} h2{font-size:16px} .wrap{padding:40px 18px 72px} }
+</style>
+</head>
+<body>
+<article class="wrap">
+  <header class="post">
+    <h1>The array can't keep up</h1>
+    <p class="dek">Interface speed is racing; the DRAM core has been flat for twenty years. Memory bandwidth is <em>bought</em> — with width, packaging, and power — not clocked. Which leaves exactly two durable moves.</p>
+    <div class="meta">Systems &amp; heterogeneous silicon · the physics under the data-movement thesis</div>
+    <div class="nav"><a href="small-frees-big.html">← Small Frees Big</a><a href="study.html">Silicon study</a><a href="system-capacity.html">The bandwidth budget</a></div>
+  </header>
+
+  <p>A recurring question when people see the data-movement argument: interconnect keeps getting faster — GDDR7, HBM4, 224-gigabit SerDes, co-packaged optics — so surely memory bandwidth just keeps up? It does, in aggregate. But it keeps up the way a quarry keeps up with demand: not by mining faster, but by moving more rock. The thing actually storing your bits has barely sped up in twenty years, and everything else is compensation bolted around it.</p>
+
+  <div class="tiles">
+    <div class="tile"><div class="v">~50 ns</div><div class="k">DRAM row-cycle time (t<sub>RC</sub>) — essentially unchanged since ~2000. The array core is flat.</div></div>
+    <div class="tile"><div class="v">16 → 32 Gb/s</div><div class="k">GDDR per-pin, GDDR6 → GDDR7 — and via PAM3 modulation, not a faster clock.</div></div>
+    <div class="tile"><div class="v">1024 → 2048-bit</div><div class="k">How HBM4 adds bandwidth: <em>width</em>, not speed — and it needs a silicon interposer.</div></div>
+    <div class="tile"><div class="v">224 → 448 G/lane</div><div class="k">SerDes &amp; optics scaling fast — but that's the <em>fabric</em>, not the array.</div></div>
+  </div>
+
+  <h2>Three "bandwidths" people conflate</h2>
+  <p>Almost every confusion here comes from collapsing three different numbers into one word. <strong>Per-pin signaling rate</strong> — the PHY — is racing: GDDR6 at ~16–20 Gb/s, GDDR6X 22, GDDR7 32 and climbing toward 48. Note <em>how</em> it climbs past ~20 Gb/s: not with a faster clock but with richer modulation — PAM3/PAM4 pack more bits per symbol because you can't keep doubling the baud rate across a package. <strong>Aggregate interface bandwidth</strong> — per-pin × width — is where HBM wins, and it wins by width: HBM3e is only ~9 Gb/s/pin, but 1024 bits wide per stack gives ~1.2&nbsp;TB/s; HBM4 goes to 2048 bits for ~2&nbsp;TB/s. Slow per pin, absurdly wide, and glued to the die by an interposer. And then there is the number that actually answers the question — <strong>the DRAM array core rate</strong> — which has gone essentially nowhere.</p>
+  <p>For reference, Tenstorrent's Blackhole sits at <strong>512&nbsp;GB/s</strong> of GDDR6 per chip — a ~256-bit-class bus at ~16–18 Gb/s/pin on a standard organic substrate, no interposer. Cheap memory, standard packaging, Ethernet for scale-out. Hold that in mind; it's the frugal end of the same physics.</p>
+
+  <h2>The core is flat — and it's physics, not laziness</h2>
+  <p>A DRAM bit is a tiny leaky capacitor. Reading it means driving a bitline, firing a sense amplifier, and resolving a small analog charge into a digital one. That's a slow, physics-bound operation, and it has a floor. Row-cycle time (<code>t<sub>RC</sub></code>) has crept from ~60&nbsp;ns two decades ago to ~45–50&nbsp;ns today; the array core runs a few hundred megahertz. Worse, it fights density: shrinking the cell stores <em>less</em> charge, which makes sensing harder and slower, not faster. There is no Moore's law for the DRAM array. So none — <em>literally none</em> — of the interface gains come from faster cells.</p>
+
+  <h2>So how does interface bandwidth climb anyway? Three tricks around a slow core</h2>
+  <p>Every generation buys aggregate bandwidth with the same three levers, none of which touch cell speed. <strong>Prefetch:</strong> one slow, wide read from the array — open a row, grab a large burst (a 16<em>n</em> prefetch on GDDR6/DDR5) — which the fast PHY then serializes out the pins. The array lumbers once; the pins stream. <strong>Banking parallelism:</strong> dozens of banks and bank-groups, interleaved so that while one bank sits in its slow <code>t<sub>RC</sub></code> recovery, others are being read — you hide the slow core behind many banks running out of phase. <strong>Width and modulation:</strong> more pins (HBM's 1024/2048-bit stacks) and more bits per symbol (PAM3/4). That's the whole playbook. It works beautifully for streaming, wide, bank-parallel access — and not at all for random, narrow, latency-bound access, which stays pinned to the core rate.</p>
+
+  <figure>
+    <div class="fig-inner">
+      <svg viewBox="0 0 980 430" role="img" aria-label="Log-scale chart: interface bandwidth rises ~100x from 2000 to 2026 while the DRAM array core rate stays flat, opening a widening gap.">
+        <!-- axes -->
+        <line x1="70" y1="40" x2="70" y2="360" stroke="#c3ccd4" stroke-width="1.2"/>
+        <line x1="70" y1="360" x2="930" y2="360" stroke="#c3ccd4" stroke-width="1.2"/>
+        <!-- y gridlines (log: 1,10,100) -->
+        <g font-family="-apple-system,Arial" font-size="11" fill="#93a1b0">
+          <line x1="70" y1="360" x2="930" y2="360" stroke="#eef1f4"/><text x="62" y="364" text-anchor="end">1×</text>
+          <line x1="70" y1="223" x2="930" y2="223" stroke="#eef1f4"/><text x="62" y="227" text-anchor="end">10×</text>
+          <line x1="70" y1="86"  x2="930" y2="86"  stroke="#eef1f4"/><text x="62" y="90"  text-anchor="end">100×</text>
+          <text x="86" y="20" fill="#6a727a" font-weight="600">Bandwidth, relative to year 2000 (log)</text>
+          <text x="70" y="384" text-anchor="start">2000</text>
+          <text x="500" y="384" text-anchor="middle">2013</text>
+          <text x="930" y="384" text-anchor="end">2026</text>
+        </g>
+        <!-- interface line (rising): mapY(v)=360-137*log10(v); x=70+33.08*(yr-2000) -->
+        <!-- (2000,1)(2008,6)(2014,20)(2018,45)(2022,95)(2026,180) -->
+        <polyline fill="none" stroke="#1f4e79" stroke-width="2.6"
+          points="70,360 335,253 533,182 665,134 798,89 930,51"/>
+        <g fill="#1f4e79"><circle cx="70" cy="360" r="3.5"/><circle cx="335" cy="253" r="3.5"/><circle cx="533" cy="182" r="3.5"/><circle cx="665" cy="134" r="3.5"/><circle cx="798" cy="89" r="3.5"/><circle cx="930" cy="51" r="5"/></g>
+        <text x="924" y="42" text-anchor="end" font-family="-apple-system,Arial" font-size="12.5" font-weight="700" fill="#1f4e79">interface BW  ~180×</text>
+        <text x="332" y="238" font-family="-apple-system,Arial" font-size="11" fill="#1f4e79">per-pin × width × modulation</text>
+        <!-- core line (flat): (2000,1)(2026,1.3) -->
+        <polyline fill="none" stroke="#a4443a" stroke-width="2.6" points="70,360 930,344"/>
+        <g fill="#a4443a"><circle cx="70" cy="360" r="3.5"/><circle cx="930" cy="344" r="5"/></g>
+        <text x="924" y="337" text-anchor="end" font-family="-apple-system,Arial" font-size="12.5" font-weight="700" fill="#a4443a">DRAM array core  ~1.3×</text>
+        <!-- the gap -->
+        <line x1="855" y1="63" x2="855" y2="345" stroke="#8a5a1a" stroke-width="1.3" stroke-dasharray="4 3"/>
+        <text x="843" y="196" text-anchor="end" font-family="-apple-system,Arial" font-size="12" fill="#8a5a1a" font-weight="600">the gap you</text>
+        <text x="843" y="212" text-anchor="end" font-family="-apple-system,Arial" font-size="12" fill="#8a5a1a" font-weight="600">pay to cross</text>
+      </svg>
+    </div>
+    <figcaption>Two decades, two trajectories. Per-pin rate, bus width, and modulation push aggregate interface bandwidth up ~100× and more; the DRAM cell array — set by capacitor sensing physics — barely moves. Every increment of the blue line is bought with pins, banks, stacks, interposers, PHY area, and I/O energy. Rates: GDDR6/6X/7, HBM3e/HBM4, t<sub>RC</sub> trend (sources below).</figcaption>
+  </figure>
+
+  <h2>So — can the array keep up? No, and structurally it can't</h2>
+  <p>Aggregate memory bandwidth keeps climbing only because you keep spending pins, banks, stacks, interposers, PHY area, and I/O energy to widen and parallelize around a core that isn't getting faster. Which means bandwidth has become a <strong>cost-and-packaging problem, not a speed problem</strong> — and that is precisely why HBM is expensive. You are paying for width and 2.5D packaging to compensate for a flat array. It is also why a frugal design like Blackhole trades raw bandwidth for cost: same physics, cheaper side of the curve.</p>
+
+  <h2>Where 224G SerDes and CPO fit — a different axis</h2>
+  <p>224-gigabit-per-lane PAM4 is shipping and 448G is the 2026 frontier for 3.2&nbsp;Tb/s optical modules; co-packaged optics pulls the light into the package to beat the electrical reach-and-energy wall. All of it is <strong>scale-out</strong> — chip-to-chip, node-to-node, and increasingly memory <em>pooling</em> — and none of it makes a DRAM array faster. Note the shape mismatch: you never run a memory PHY at 224G/pin. Memory is wide-and-moderate (hundreds of pins at 16–48 Gb/s, capacity sitting right next to compute); the fabric is narrow-and-blazing (a few lanes at 224G+ for reach). Optics attacks reach; the array core is untouched. Faster links just relocate the bottleneck inward — back to the pins-versus-array gap.</p>
+
+  <h2>The bandwidth nobody exposes — and the two moves it leaves</h2>
+  <p>Here is the fact hiding inside all of this. The array's <em>internal</em> bandwidth is enormous. Activating one row opens ~1–2&nbsp;KB of bits into the sense amplifiers at once, per bank, across dozens of banks — the on-die bandwidth behind the pins is orders of magnitude larger than anything the interface ever exposes. HBM's entire trick is drilling more through-silicon vias to leak a little more of that internal bandwidth out through more pins. The pins are the choke; the array is not.</p>
+  <div class="kick">If the interface race can't win — because the choke is the pins-versus-array gap, not the link — then only two moves are durable: <strong>move fewer bytes across the pins</strong>, and <strong>compute before the pins</strong>.</div>
+  <p>The first is content-aware read reduction — skip the KV and weight bytes a given token doesn't need, so the scarce, expensive pin bandwidth carries only what matters. The second is <strong>near-memory compute</strong>: do the reduction at the base die, near the banks, so you exploit the array's huge internal bandwidth <em>before</em> the narrow, power-hungry pin interface — and return only the survivors. That is not a bonus feature of processing-in-memory; it <em>is</em> the reason it exists. GDDR7, HBM4, 448G, and CPO are all buying width to paper over a flat array, and paying through the nose to do it. Moving fewer bytes, and moving them a shorter distance, is the lever that doesn't depend on a physics curve that stopped bending.</p>
+
+  <p class="src"><strong>Sources:</strong> SK hynix GDDR7 32&nbsp;Gb/s; Rambus GDDR7 primer; Siemens HBM3e/HBM4 design guide; Credo 224G PAM4 SerDes (TSMC N3); 448G / 3.2T optical modules; SemiAnalysis on co-packaged optics. DRAM t<sub>RC</sub> trend from JEDEC DDR/GDDR datasheets. Blackhole memory from Tenstorrent product documentation.</p>
+
+  <div class="bio">A companion to <a href="small-frees-big.html">Small Frees Big</a> — the physical foundation under the data-movement thesis. I work at the intersection of real-time systems and heterogeneous silicon, increasingly on how those disciplines apply to AI inference at the memory boundary; a near-memory reduction mechanism from that work is the subject of a pending U.S. provisional (2026).</div>
+</article>
+</body>
+</html>
