@@ -127,6 +127,16 @@
    <div class="leg"><span class="sw" style="background:var(--accent)"></span>serving capacity (× baseline)<span class="sw" style="background:var(--ok)"></span>safe<span class="sw" style="background:var(--warn)"></span>aggressive<span class="sw" style="background:var(--bad)"></span>too lossy</div>
  </div>
 
+ <h3>The other lever — precision — is portable, and it picks a different regime</h3>
+ <p class="lead">Read-selection is one way to move fewer bytes; low precision is the other. They are worth separating, because one is architecture-specific and one is not — and because weight precision, the obvious knob, is the <em>wrong</em> lever for serving. Dropping <strong>weight</strong> precision (FP8 → MXFP4, ~4.25 bits) barely moves serving throughput: in the batched, long-context regime weights are amortized over a batch of hundreds and KV dominates, so MXFP4 weights buy ~1.04×. Weight precision only pays in the weight-bound corner — batch-1, short context — where it buys ~1.9× and selection does nothing. The precision lever that actually stacks with selection is on the <strong>KV cache itself</strong> (FP16 → FP8/INT4), because that hits the term that dominates serving:</p>
+ <table>
+   <tr><th>Lever (Llama-70B)</th><th>batch-1, short — weight-bound</th><th>batched serving — KV-bound</th></tr>
+   <tr><td>MXFP4 weights</td><td class="ok">~1.9×</td><td>~1.04×</td></tr>
+   <tr><td>Content-aware KV read-selection (57%)</td><td>~1.0×</td><td class="ok">~2.1×</td></tr>
+   <tr><td>+ low-precision KV (FP16 → FP8)</td><td>—</td><td><strong>~4.2×</strong> (vs FP16-KV baseline)</td></tr>
+ </table>
+ <div class="note"><strong>Portable vs differentiating — stated plainly.</strong> Precision, weight or KV, is <em>portable</em>: every GPU stack already does it. So the ~4× full stack is the total byte reduction available to <em>anyone</em>, not an edge — and I don't claim it. The architecture-specific slice is the ~2× <strong>enforce-at-memory selection</strong> a GPU can't do at the array, because it still reads then discards. This panel is here for completeness: to size the whole byte budget, to show that the two levers dominate <em>mutually-exclusive</em> regimes (so they don't naively multiply), and to be explicit about which slice is actually mine.</div>
+
  <h2><span class="n">05</span>Does decode even matter? — the prefill/decode split</h2>
  <p class="lead">A decode win only matters if decode is where the time goes. Prefill is a fast parallel burst; decode is sequential and memory-bound, re-reading weights+KV every token. So the split is set by the prompt:generation ratio — and for anything with real generation, decode is nearly all of it. Set a workload; the bar is where the wall-clock goes, and the stat is the end-to-end speedup your current cut delivers (Amdahl).</p>
  <div class="exp">

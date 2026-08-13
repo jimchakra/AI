@@ -59,6 +59,7 @@
     <ol>
       <li><a href="small-frees-big.html">Small Frees Big</a> — the thesis: why <em>data movement</em>, not arithmetic, sets the limit for inference.</li>
       <li><a href="memory-wall.html">The array can't keep up</a> — the physics under the thesis: why memory bandwidth is bought with width and packaging, not clocked.</li>
+      <li><a href="numerics-datapath.html">Block float, rediscovered</a> — the datapath &amp; numerics: MXFP4 is block floating point, and the DL tensor engine is a datapath comms silicon already ships.</li>
       <li><a href="study.html">Compute at the Memory Boundary</a> — the full study: thesis → filed patent → verified RTL → grounded synthesis → real-model validation.</li>
       <li><a href="graceful-degradation.html">Bend, don't break</a> — the systems lens: reliability past P99 and tiered QoS, with four live simulations.</li>
       <li><a href="system-capacity.html">The bandwidth budget</a> — the numbers: a datasheet-calibrated full-system model showing &gt;2× decode capacity, with the $/token verdict and the method stated.</li>
@@ -105,6 +106,13 @@
       <div class="card-title">The array can&rsquo;t keep up <span class="arw">&#8594;</span></div>
       <div class="card-sub">Interface speed is racing; the DRAM core has been flat for twenty years — why bandwidth is bought, not clocked.</div>
       <p class="card-desc">The physical foundation under the data-movement thesis: the three &ldquo;bandwidths&rdquo; people conflate, why the DRAM array core is stuck near ~50&nbsp;ns while per-pin rate, width, and modulation climb ~100×, why 224G SerDes and co-packaged optics are a different (scale-out) axis, and the huge <em>internal</em> bandwidth that near-memory compute exists to tap. Leaves exactly two durable moves — move fewer bytes, and compute before the pins.</p>
+    </a>
+
+    <a class="card" href="numerics-datapath.html">
+      <div class="card-meta">Compute datapath &amp; numerics · new</div>
+      <div class="card-title">Block float, rediscovered <span class="arw">&#8594;</span></div>
+      <div class="card-sub">The frontier inference numeric — MXFP4 microscaling — is block floating point, which comms and DSP silicon have shipped for fifty years.</div>
+      <p class="card-desc">A translation from multi-precision vector datapaths to the DL tensor engine: why MX / microscaling <em>is</em> block float at 32-element granularity, how an MX MAC is an <code>int8×int4</code> tile plus a per-block exponent, one FFN down-projection tile mapped end-to-end at MXFP4, and the reframe that low precision is first a <em>bandwidth</em> lever for decode and only second a MAC-area lever for prefill. On the numeric the field is most excited about, the block-float lineage is a head start, not a gap.</p>
     </a>
 
     <a class="card" href="results.html">

@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Block Float, Rediscovered — MXFP4, and the Datapath That Was Already There</title>
+<meta name="description" content="The frontier inference numeric — OCP microscaling / MXFP4 — is block floating point, a comms-and-DSP staple for decades. A translation from multi-precision vector datapaths to the DL tensor engine, with one FFN tile mapped onto a real MAC, and where the win actually lands.">
+<style>
+  :root{
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --serif:Georgia,"Iowan Old Style",Charter,"Times New Roman",serif;
+    --ink:#16191d; --ink2:#33393f; --body:#2c3238; --muted:#6a727a;
+    --rule:#e2e5e8; --page:#ffffff; --head:#2f3e50; --accent:#1f4e79;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--page);color:var(--body);font-family:var(--serif);line-height:1.6;font-size:16px}
+  .wrap{max-width:684px;margin:0 auto;padding:60px 24px 104px}
+  header.post{margin-bottom:8px}
+  h1{font-family:var(--sans);font-size:27px;line-height:1.2;letter-spacing:-.4px;color:var(--head);margin:0 0 12px;font-weight:700}
+  .dek{font-family:var(--sans);font-size:15.5px;color:#586470;margin:0 0 14px;font-weight:400;line-height:1.5}
+  .meta{font-family:var(--sans);font-size:11px;color:#8a929a;text-transform:uppercase;letter-spacing:1.2px;border-bottom:1px solid var(--rule);padding-bottom:18px;margin-bottom:14px}
+  .nav{font-family:var(--sans);font-size:12.5px;margin:0 0 28px}
+  .nav a{margin-right:14px}
+  h2{font-family:var(--sans);font-size:17px;line-height:1.3;color:var(--head);margin:38px 0 8px;font-weight:650;letter-spacing:-.1px}
+  p{margin:0 0 16px}
+  strong{color:var(--head);font-weight:700}
+  em{color:var(--ink2)}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid #c9d4de}
+  a:hover{border-bottom-color:var(--accent)}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;background:#eef1f4;padding:1px 5px;border-radius:4px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:26px 0 8px}
+  .tile{border:1px solid var(--rule);border-radius:11px;padding:14px 15px;background:#fff;font-family:var(--sans)}
+  .tile .v{font-size:20px;font-weight:700;color:var(--head);letter-spacing:-.4px;line-height:1.06}
+  .tile .k{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.4}
+  figure{margin:34px 0;width:min(94vw,980px);position:relative;left:50%;transform:translateX(-50%)}
+  .fig-inner{border:1px solid var(--rule);border-radius:10px;padding:18px 18px 8px;background:#fff;box-shadow:0 1px 4px rgba(20,25,30,.06)}
+  figure svg{width:100%;height:auto;display:block}
+  figcaption{font-family:var(--sans);max-width:640px;margin:12px auto 0;font-size:12.5px;color:var(--muted);text-align:center;font-style:italic}
+  table{border-collapse:collapse;width:100%;font-family:var(--sans);font-size:13px;margin:20px 0}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{color:#8a929a;font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+  td.n{font-variant-numeric:tabular-nums}
+  .kick{border-left:3px solid var(--accent);padding:2px 0 2px 16px;margin:22px 0;font-family:var(--sans);font-size:15px;color:var(--ink2)}
+  .bio{font-family:var(--sans);margin-top:44px;padding-top:22px;border-top:1px solid var(--rule);font-size:14px;color:var(--muted);font-style:italic;line-height:1.6}
+  .src{font-family:var(--sans);font-size:12px;color:#8a929a;margin-top:10px}
+  @media(max-width:640px){ body{font-size:15.5px} h1{font-size:23px} h2{font-size:16px} .wrap{padding:40px 18px 72px} table{font-size:12px} }
+</style>
+</head>
+<body>
+<article class="wrap">
+  <header class="post">
+    <h1>Block float, rediscovered</h1>
+    <p class="dek">The frontier inference numeric — OCP microscaling, MXFP4 — is <em>block floating point</em>, which comms and DSP silicon have shipped for fifty years. A translation from multi-precision vector datapaths to the DL tensor engine, one FFN tile mapped onto a real MAC, and where the win actually lands.</p>
+    <div class="meta">Compute datapath &amp; numerics · a translation, not a discovery</div>
+    <div class="nav"><a href="memory-wall.html">← The array can't keep up</a><a href="study.html">Silicon study</a><a href="kv-selector-spec.html">KV-selector spec</a></div>
+  </header>
+
+  <p>Every few years the accelerator world gives an old idea a new acronym and treats it as an invention. The current one is <strong>microscaling</strong> — the OCP MX formats, MXFP8 down to MXFP4 — pitched as the numeric that finally makes 4-bit inference work. It does work, and it matters. But strip the branding and MX is <strong>block floating point</strong>: a block of narrow values sharing one exponent. FFT engines, fixed-point receivers, and modem datapaths have done exactly this since the 1970s, for exactly the same reason — hold dynamic range with cheap mantissas by amortizing the exponent across a block. If you've built comms silicon, you didn't adjacent-learn this format. You shipped it.</p>
+
+  <div class="tiles">
+    <div class="tile"><div class="v">4.25 bits</div><div class="k">MXFP4: a 4-bit element (E2M1) + one 8-bit scale shared over 32 — amortized bits per weight.</div></div>
+    <div class="tile"><div class="v">1 scale / 32</div><div class="k">Microscaling <em>is</em> block floating point at 32-element granularity. DSP has done blockwise shared exponents for decades.</div></div>
+    <div class="tile"><div class="v">~3.8×</div><div class="k">fewer bytes/weight vs FP16 — which, for memory-bound decode, is the <em>real</em> win: bandwidth, not MAC area.</div></div>
+    <div class="tile"><div class="v">area ∝ bits²</div><div class="k">a 4-bit multiplier is ~16× smaller than 16-bit — but the MAC was already nearly free; see below.</div></div>
+  </div>
+
+  <h2>One idea, four names</h2>
+  <p>Integer quantization with a per-tensor scale, integer with a per-<em>channel</em> scale, MX with a per-32 scale, and classical block floating point with a per-frame exponent are the <em>same mechanism</em> at different granularity: share a scale over a block of narrow values, so the mantissas stay cheap and the block keeps its dynamic range. DL is simply pushing the block finer — 32 wide — because finer blocks track the outliers that wreck low-bit LLM quantization. That's a real and useful refinement. It is not a new kind of arithmetic.</p>
+
+  <figure>
+    <div class="fig-inner">
+      <svg viewBox="0 0 940 250" role="img" aria-label="Four quantization schemes shown as narrow values sharing a scale over blocks of decreasing size: per-tensor INT, per-channel INT, MXFP4 per-32, and classical block floating point.">
+        <g font-family="-apple-system,Arial">
+          <!-- helper: rows -->
+          <!-- Row labels -->
+          <text x="8" y="42" font-size="12.5" font-weight="700" fill="#2f3e50">INT8, per-tensor</text>
+          <text x="8" y="58" font-size="10.5" fill="#8a929a">1 scale · whole tensor</text>
+          <text x="8" y="104" font-size="12.5" font-weight="700" fill="#2f3e50">INT, per-channel</text>
+          <text x="8" y="120" font-size="10.5" fill="#8a929a">1 scale · per column</text>
+          <text x="8" y="166" font-size="12.5" font-weight="700" fill="#2f3e50">MXFP4 microscaling</text>
+          <text x="8" y="182" font-size="10.5" fill="#8a929a">1 scale · per 32</text>
+          <text x="8" y="228" font-size="12.5" font-weight="700" fill="#2f3e50">Block float (DSP/FFT)</text>
+          <text x="8" y="244" font-size="10.5" fill="#8a929a">1 exponent · per block</text>
+        </g>
+        <!-- Row 1: one big block, one scale -->
+        <g>
+          <rect x="210" y="24" width="620" height="26" rx="4" fill="#eef3f8" stroke="#9db3c9"/>
+          <rect x="838" y="24" width="90" height="26" rx="4" fill="#1f4e79"/><text x="883" y="41" text-anchor="middle" font-size="11" fill="#fff" font-family="-apple-system,Arial">scale</text>
+        </g>
+        <!-- Row 2: 4 channel blocks -->
+        <g>
+          <rect x="210" y="86" width="148" height="26" rx="4" fill="#eef3f8" stroke="#9db3c9"/><rect x="362" y="86" width="18" height="26" rx="3" fill="#1f4e79"/>
+          <rect x="384" y="86" width="148" height="26" rx="4" fill="#eef3f8" stroke="#9db3c9"/><rect x="536" y="86" width="18" height="26" rx="3" fill="#1f4e79"/>
+          <rect x="558" y="86" width="148" height="26" rx="4" fill="#eef3f8" stroke="#9db3c9"/><rect x="710" y="86" width="18" height="26" rx="3" fill="#1f4e79"/>
+          <rect x="732" y="86" width="148" height="26" rx="4" fill="#eef3f8" stroke="#9db3c9"/><rect x="884" y="86" width="18" height="26" rx="3" fill="#1f4e79"/>
+        </g>
+        <!-- Row 3: many small blocks (finer) -->
+        <g>
+          <!-- draw ~8 blocks of value+scale -->
+          <!-- each unit: 80px value + 10px scale -->
+          <g fill="#eef3f8" stroke="#9db3c9">
+            <rect x="210" y="148" width="76" height="26" rx="3"/><rect x="300" y="148" width="76" height="26" rx="3"/><rect x="390" y="148" width="76" height="26" rx="3"/><rect x="480" y="148" width="76" height="26" rx="3"/><rect x="570" y="148" width="76" height="26" rx="3"/><rect x="660" y="148" width="76" height="26" rx="3"/><rect x="750" y="148" width="76" height="26" rx="3"/><rect x="840" y="148" width="62" height="26" rx="3"/>
+          </g>
+          <g fill="#1f4e79">
+            <rect x="286" y="148" width="10" height="26" rx="2"/><rect x="376" y="148" width="10" height="26" rx="2"/><rect x="466" y="148" width="10" height="26" rx="2"/><rect x="556" y="148" width="10" height="26" rx="2"/><rect x="646" y="148" width="10" height="26" rx="2"/><rect x="736" y="148" width="10" height="26" rx="2"/><rect x="826" y="148" width="10" height="26" rx="2"/>
+          </g>
+        </g>
+        <!-- Row 4: block float -->
+        <g>
+          <rect x="210" y="210" width="620" height="26" rx="4" fill="#f3ede2" stroke="#c8a97a"/>
+          <rect x="838" y="210" width="90" height="26" rx="4" fill="#8a5a1a"/><text x="883" y="227" text-anchor="middle" font-size="11" fill="#fff" font-family="-apple-system,Arial">exponent</text>
+        </g>
+        <text x="210" y="16" font-size="10.5" fill="#8a929a" font-family="-apple-system,Arial">narrow values (mantissas) →</text>
+      </svg>
+    </div>
+    <figcaption>The same trick at four granularities: a shared scale (blue) or exponent (amber) over a block of narrow values. Per-tensor → per-channel → per-32 (MX) → per-frame (classical block float). "Microscaling" is the 32-wide row; the bottom row is a modem FFT stage. Same arithmetic, finer block.</figcaption>
+  </figure>
+
+  <table>
+    <tr><th>Format</th><th>Bits / elem</th><th>Shared scale over</th><th>DL role</th><th>Shipped in comms/graphics as</th></tr>
+    <tr><td>INT8 / INT4</td><td class="n">8 / 4</td><td>tensor or channel</td><td>weights, activations</td><td>fixed-point decoders, quantized filters</td></tr>
+    <tr><td>FP8 (E4M3 / E5M2)</td><td class="n">8</td><td>per-value exponent</td><td>inference forward / gradients</td><td>GPU FP arithmetic datapath</td></tr>
+    <tr><td>MXFP8 / MXFP6</td><td class="n">8.25 / 6.25</td><td>32</td><td>inference, some training</td><td>block floating point</td></tr>
+    <tr><td><strong>MXFP4 (E2M1)</strong></td><td class="n">4.25</td><td>32</td><td>weights — the 4-bit frontier</td><td><strong>block floating point (FFT, receivers)</strong></td></tr>
+    <tr><td>Block float (classical)</td><td class="n">m + shared exp</td><td>frame / FFT stage</td><td>—</td><td>your FFT and modem RX datapaths</td></tr>
+    <tr><td>Complex shared-exp (PCFL)</td><td class="n">2 mant + 1 exp</td><td>the I/Q pair (size 2)</td><td>—</td><td>your modem receiver complex MACs</td></tr>
+  </table>
+
+  <p>And the block runs the other way, too. Push it down to size two and you reach the complex case: the real and imaginary parts of an I/Q sample sharing a single exponent — the <strong>PCFL</strong> formats in modem receivers. Because I and Q ride a common envelope, their dynamic range is <em>correlated</em>, so one exponent legitimately covers both — arguably a subtler shared-exponent scheme than MX's homogeneous 32-wide block, and one whose datapath (a complex multiply-accumulate under a shared exponent) you have already taped out. Same idea, at the tightest and most correlated block there is.</p>
+
+  <div class="kick">So when the accelerator world announced &ldquo;microscaling,&rdquo; it wasn&rsquo;t a new numeric to me — it was a familiar one at an unfamiliar block size. I&rsquo;ve shipped shared-exponent arithmetic three ways in silicon: per-channel integer scaling, block-float FFT datapaths, and complex I/Q shared exponents (PCFL, sharing an exponent across correlated components — the harder case). MXFP4 is the 32-wide version I simply hadn&rsquo;t had reason to build yet. This part isn&rsquo;t new to me.</div>
+
+  <h2>What it costs — and the gap is a block-size knob</h2>
+  <p>For completeness, the quality numbers — because the point isn't that 4-bit is free, it's that the loss is small and, tellingly, set by exactly the block choices above. NVIDIA's NVFP4 study (a 12B Nemotron-H trained on 10T tokens) holds the training-loss gap to FP8 <strong>under ~1%</strong> for most of the run and ~1.5% at the end, with <strong>MMLU-Pro essentially tied to FP8 — 62.58% vs 62.62%</strong>. Head-to-head at 8B / 1T tokens, <strong>NVFP4 lands ~1.5% above the BF16 reference and MXFP4 ~2.5%</strong>, and MXFP4 needs about <strong>36% more tokens</strong> to reach the same convergence. On the inference side, direct-cast MXFP4 weight quantization loses more, but calibration and rotation methods (MR-GPTQ, block rotation) recover most of it to within a small MMLU gap of BF16.</p>
+  <p>The instructive part is <em>why</em> NVFP4 beats MXFP4. The two formats differ in exactly two parameters: <strong>block size — 16 vs 32 — and scale format — an E4M3 float vs an E8M0 power-of-two</strong>. Finer block and a higher-precision shared scale buy accuracy back. That is the entire block-float design space, restated in benchmark numbers: the quality of a shared-exponent format is a function of how many values share the exponent and how precisely that scale is expressed. It is the same tradeoff a receiver engineer makes choosing a block length and a scale word for an FFT — dynamic range against bits spent on the exponent. The accelerator field has simply started measuring it on MMLU instead of on error-vector magnitude.</p>
+
+  <h2>The datapath is the one you already built</h2>
+  <p>An MX MAC is a block-float MAC, which is your multi-precision vector MAC with the exponent handled once per block instead of once per element. Multiply the narrow element mantissas in a small integer multiplier — a 4-bit×4-bit unit, cheaper than the <code>int8×int4</code> tile you've already taped out. Accumulate wide across the 32-element block. Apply the two shared scales (activation-block × weight-block) as a single shift/multiply at the block boundary — amortized over 32 MACs, so its cost rounds to nothing. Requantize the result into the next block's format. That is the entire arithmetic. The SIMD/VLIW mixed-precision units, the requantization stages, the dynamic-range bookkeeping — you have designed all of it, under tighter power budgets than a datacenter part ever sees.</p>
+
+  <figure>
+    <div class="fig-inner">
+      <svg viewBox="0 0 940 210" role="img" aria-label="Block-float MAC datapath: narrow mantissa multiply, wide integer accumulate over 32 elements, apply shared block scales once, requantize out.">
+        <defs><marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#93a1b0"/></marker></defs>
+        <g font-family="-apple-system,Arial" font-size="12">
+          <!-- stage 1: narrow multiply -->
+          <rect x="24" y="60" width="176" height="86" rx="9" fill="#eef3f8" stroke="#9db3c9"/>
+          <text x="112" y="86" text-anchor="middle" fill="#2f3e50" font-weight="700">narrow multiply</text>
+          <text x="112" y="106" text-anchor="middle" fill="#6a757f" font-size="11">E2M1 × E2M1 mantissas</text>
+          <text x="112" y="123" text-anchor="middle" fill="#6a757f" font-size="11">(4-bit int multiplier)</text>
+          <line x1="200" y1="103" x2="248" y2="103" stroke="#93a1b0" stroke-width="1.6" marker-end="url(#ar)"/>
+          <!-- stage 2: wide accumulate -->
+          <rect x="250" y="60" width="188" height="86" rx="9" fill="#eef3f8" stroke="#9db3c9"/>
+          <text x="344" y="86" text-anchor="middle" fill="#2f3e50" font-weight="700">wide accumulate</text>
+          <text x="344" y="106" text-anchor="middle" fill="#6a757f" font-size="11">int32 over the 32-block</text>
+          <text x="344" y="123" text-anchor="middle" fill="#6a757f" font-size="11">(no per-elem exponent)</text>
+          <line x1="438" y1="103" x2="486" y2="103" stroke="#93a1b0" stroke-width="1.6" marker-end="url(#ar)"/>
+          <!-- stage 3: apply block scales -->
+          <rect x="488" y="60" width="196" height="86" rx="9" fill="#e7eef7" stroke="#1f4e79"/>
+          <text x="586" y="82" text-anchor="middle" fill="#1f4e79" font-weight="700">apply block scales</text>
+          <text x="586" y="102" text-anchor="middle" fill="#33393f" font-size="11">× (scaleA · scaleW)</text>
+          <text x="586" y="119" text-anchor="middle" fill="#8a5a1a" font-size="11">once per 32 MACs → ~free</text>
+          <line x1="684" y1="103" x2="732" y2="103" stroke="#93a1b0" stroke-width="1.6" marker-end="url(#ar)"/>
+          <!-- stage 4: requantize -->
+          <rect x="734" y="60" width="182" height="86" rx="9" fill="#eef3f8" stroke="#9db3c9"/>
+          <text x="825" y="86" text-anchor="middle" fill="#2f3e50" font-weight="700">requantize</text>
+          <text x="825" y="106" text-anchor="middle" fill="#6a757f" font-size="11">round → next block</text>
+          <text x="825" y="123" text-anchor="middle" fill="#6a757f" font-size="11">format + new scale</text>
+          <!-- annotation -->
+          <text x="470" y="30" text-anchor="middle" fill="#2f3e50" font-size="12.5" font-weight="600">= your int8×int4 MAC tile + a shared per-block exponent</text>
+          <text x="470" y="180" text-anchor="middle" fill="#6a757f" font-size="11.5" font-style="italic">the exponent moves from every element (float) to once per block (block float) — that is the whole efficiency argument</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>The MX / block-float MAC. Narrow integer multiply, wide accumulate, one scale application per 32-element block, requantize. The blue stage is the only addition to a standard integer MAC — and it is amortized 32:1, which is exactly why block float beats per-element float on area and power.</figcaption>
+  </figure>
+
+  <h2>A worked tile — FFN down-projection at MXFP4</h2>
+  <p>Take one output tile of an FFN down-projection: a 128-wide slab of the weight matrix in MXFP4, activations in MXFP8, feeding a 128×128 MAC array. Each PE does the 4-bit×(4/8-bit) multiply and accumulates in int32; every 32 elements along the contraction dimension, the two block scales are applied and the partial sums promoted to fp; the tile finishes with the SwiGLU non-linearity and requantizes its output block. The array is 16K MACs of 4-bit multipliers — a fraction of the area of an FP16 array of the same shape. Nothing here is unfamiliar if you have built a systolic decoder or a vector-engine GEMM: it is mixed-precision MACs, wide accumulation, and scale bookkeeping, which is the trade you already practice.</p>
+
+  <div class="kick">And here is the part that ties back to the rest of this work: at <em>decode</em>, the 4-bit format's biggest win is not the cheaper multiplier — the MAC was already sub-picojoule and the array already ~99% idle. It is that MXFP4 moves <strong>~3.8× fewer bytes per weight</strong> than FP16 across the pins. Precision reduction is, first, a <em>bandwidth</em> lever.</div>
+
+  <p>That reframes the whole numerics question the way the memory-bound analysis reframes everything else. For compute-bound <em>prefill</em>, the narrow multiplier and the big regular GEMM array earn their keep — area and energy per FLOP fall with the format. For memory-bound <em>decode</em>, the format's value is that every weight and every KV element is <em>fewer bytes to move</em>, and the datapath that consumes them can be small because it is starved anyway. Same format, two entirely different reasons to want it, split exactly along the prefill/decode line.</p>
+
+  <h2>Two levers, one budget — bits × survivors</h2>
+  <p>Precision is only half of the byte budget. The bill for moving a tensor is <em>values × bits-per-value</em>, and those are two independent knobs. Block float shrinks the bits per value. The other lever — the <a href="study.html">survivor bitmap</a> from the near-memory work — shrinks the <em>number</em> of values: gate the zeros an activation produces, or the KV pages a query won't attend to, and move only the survivors plus a bitmap that says which they were. The two compose, because one shrinks each value and the other deletes values, so the savings multiply.</p>
+
+  <figure>
+    <div class="fig-inner">
+      <svg viewBox="0 0 940 250" role="img" aria-label="Waterfall of bits per weight: FP16 dense 16 bits, block-float MXFP4 4.25 bits (3.8x), plus survivor bitmap skipping half the zeros 3.1 bits (5.1x), with overheads shown.">
+        <g font-family="-apple-system,Arial" font-size="12.5">
+          <text x="8" y="48" fill="#2f3e50" font-weight="700">FP16 dense</text>
+          <text x="8" y="106" fill="#2f3e50" font-weight="700">+ block float</text>
+          <text x="8" y="122" fill="#8a929a" font-size="10.5">MXFP4</text>
+          <text x="8" y="164" fill="#2f3e50" font-weight="700">+ survivor bitmap</text>
+          <text x="8" y="180" fill="#8a929a" font-size="10.5">skip ~50% zeros</text>
+        </g>
+        <!-- bars: x0=200, 40 px per bit, area 200..840 = 16 bits -->
+        <!-- Row 1: FP16 16b -->
+        <rect x="200" y="30" width="640" height="30" rx="4" fill="#dfe7ef" stroke="#9db3c9"/>
+        <text x="848" y="50" font-family="-apple-system,Arial" font-size="12" fill="#6a757f">16 b</text>
+        <text x="932" y="50" text-anchor="end" font-family="-apple-system,Arial" font-size="13.5" font-weight="700" fill="#2f3e50">1×</text>
+        <!-- Row 2: MXFP4 4.25b = 4b element + .25 scale -->
+        <rect x="200" y="88" width="160" height="30" rx="4" fill="#2f6ca8"/>
+        <rect x="360" y="88" width="10" height="30" fill="#c8a97a"/>
+        <text x="378" y="108" font-family="-apple-system,Arial" font-size="12" fill="#6a757f">4.25 b</text>
+        <text x="932" y="108" text-anchor="end" font-family="-apple-system,Arial" font-size="13.5" font-weight="700" fill="#1f4e79">3.8×</text>
+        <!-- Row 3: survivors 2.125b + bitmap 1b = 3.125b -->
+        <rect x="200" y="146" width="85" height="30" rx="4" fill="#2f6ca8"/>
+        <rect x="285" y="146" width="10" height="30" fill="#c8a97a"/>
+        <rect x="297" y="146" width="40" height="30" rx="2" fill="#4a8f7b"/>
+        <text x="345" y="166" font-family="-apple-system,Arial" font-size="12" fill="#6a757f">3.1 b</text>
+        <text x="932" y="166" text-anchor="end" font-family="-apple-system,Arial" font-size="13.5" font-weight="700" fill="#2e7d5b">5.1×</text>
+        <!-- legend -->
+        <g font-family="-apple-system,Arial" font-size="11" fill="#6a757f">
+          <rect x="200" y="206" width="12" height="12" fill="#2f6ca8"/><text x="218" y="216">element mantissa bits</text>
+          <rect x="370" y="206" width="12" height="12" fill="#c8a97a"/><text x="388" y="216">shared scale (~0.25 b)</text>
+          <rect x="560" y="206" width="12" height="12" fill="#4a8f7b"/><text x="578" y="216">survivor bitmap (1 b / position)</text>
+        </g>
+        <!-- kv note -->
+        <text x="200" y="240" font-family="-apple-system,Arial" font-size="11.5" fill="#1f4e79" font-style="italic">KV via page-level selection — bitmap is 1 bit per page, not per element → overhead ≈ 0 → ~9× vs FP16</text>
+      </svg>
+    </div>
+    <figcaption>The full move-fewer-bytes ledger for a weight. Block float takes FP16&rarr;MXFP4 (3.8×); the survivor bitmap then deletes the gated zeros for another ~1.3× — netting its own 1-bit-per-position cost. Both overheads (the shared scale and the bitmap) are inside the bars. Per-element gating lands ~5×; per-page KV selection, where the bitmap cost vanishes, reaches ~9×.</figcaption>
+  </figure>
+
+  <p>Two honest notes keep this from drifting into a marketing multiplier. The block scale costs ~0.25 bit per value and the survivor bitmap costs one bit per <em>position</em> — and that bitmap bit is a floor that <em>grows</em> as a share of the total as sparsity rises, so past roughly 85–90% skipped you drop the bitmap for an index list, or the metadata swamps the savings. And the two levers are not perfectly free of each other: aggressive low precision and aggressive skipping both spend from the same quality budget, so you tune them together, not independently. With those caveats stated, the compound is real and large — roughly <strong>5× on gated weights and ~9× on selected KV versus dense FP16</strong> — and it is the same single idea the whole portfolio turns on: the pins are the bottleneck, so move fewer bytes, in fewer bits, for fewer values.</p>
+
+  <h2>The one genuinely new thing — and how to hold it</h2>
+  <p>What a vector engine or a channel decoder does <em>not</em> teach you is the specific craft of the large, regular GEMM array: choosing weight-stationary versus output-stationary versus row-stationary dataflow, and tiling a matmul so the array stays fed. But even that follows the prefill/decode split rather than sitting apart from it. Prefill is a big square GEMM — reuse is high, so a weight- or output-stationary array amortizes operand fetch and the systolic structure pays off. Decode is a tall-skinny GEMV — there is no weight reuse at batch one, the array runs at single-digit utilization, and the right answer is not a bigger array but a smaller datapath fed by more bandwidth, which is the decode-specialized-silicon argument from the <a href="system-capacity.html">system model</a>. So the dataflow decision is not a separate discipline to acquire; it is the same operating-point reasoning applied one level down, at the array instead of the chip.</p>
+
+  <p>The honest summary, then, is not "learn compute datapath." It is that multi-precision arithmetic silicon — mixed-format MACs, wide accumulation, block-shared scaling, requantization under a power budget — is a craft comms and graphics have practiced for decades, and the DL frontier has walked back into it. The block-float lineage is not a gap to cover. On the numeric the field is currently most excited about, it is a head start.</p>
+
+  <p class="src"><strong>Sources:</strong> OCP Microscaling (MX) Formats Specification v1.0; NVIDIA/Arm/Intel MX joint paper (2023); FP8 formats (Micikevicius et al., 2022). Block floating point: standard DSP/FFT and fixed-point receiver practice. MAC and off-package movement energy per the <a href="study.html">energy model</a>.</p>
+
+  <div class="bio">A companion to <a href="memory-wall.html">The array can't keep up</a> and the <a href="study.html">silicon study</a>. I work at the intersection of real-time systems and heterogeneous silicon — GPU arithmetic datapaths, SIMD/VLIW vector engines, and multi-precision decoders shipped to silicon — now applied to AI inference at the memory boundary.</div>
+</article>
+</body>
+</html>
