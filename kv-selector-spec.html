@@ -32,7 +32,7 @@
  <div class="nav"><a href="study.html">← Study</a><a href="results.html">Results</a><a href="https://github.com/jimchakra/AI" target="_blank" rel="noopener">Code</a></div>
 
  <h2><span class="n">1</span>Mechanism</h2>
- <p>Each KV page (P tokens) is summarized by per-channel <strong>min/max of its keys</strong>. For a query <code>q</code>, an upper bound on the max attention score any token in a page can produce is <code>crit = relu(q)·Kmax + min(q,0)·Kmin</code> — sign-correct, and computed <em>without</em> reading the page's full keys. Read only the top-k pages by <code>crit</code> (plus the sink page and the query's own page). Because the score is an over-approximating bound, it rarely drops a page that mattered — high recall, tunable by the page budget.</p>
+ <p>The selection criterion is <strong>Quest's</strong> (Tang et al., 2024), used here unchanged: each KV page (P tokens) is summarized by per-channel <strong>min/max of its keys</strong>, and for a query <code>q</code>, <code>crit = relu(q)·Kmax + min(q,0)·Kmin</code> is a sign-correct upper bound on the max attention score any token in the page can produce — computed <em>without</em> reading the page's full keys. Read only the top-k pages by <code>crit</code> (plus the sink page and the query's own page); because the score over-approximates, it rarely drops a page that mattered. <strong>The contribution here is not the selection rule — it is putting that published rule in silicon at the memory:</strong> summaries resident in base-die SRAM, scored there, so only survivor pages are ever read from the DRAM arrays.</p>
 
  <h2><span class="n">2</span>Block diagram</h2>
  <div class="fig">
