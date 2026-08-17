@@ -1,0 +1,128 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The fabric is the next wall — a problem statement</title>
+<meta name="description" content="A problem statement and literature survey, not a result: AI at scale is a data-movement problem, the cluster is a memory hierarchy, and its outer tiers — the interconnect — are the emerging wall. A communications architect's lens on collective communication, barriers, and why per-flow fairness is the wrong QoS objective for barrier-synchronized traffic. First-order reasoning, honest about what is known vs. open.">
+<style>
+ :root{--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+   --serif:Georgia,"Iowan Old Style",Charter,serif;
+   --ink:#2f3e50;--body:#33404d;--muted:#6a757f;--faint:#93a1b0;--rule:#e4e9ee;
+   --zone:#eef3f8;--accent:#43648f;--ok:#2e7d5b;--warn:#8a5a1a;--bad:#a4443a;--page:#fff;}
+ *{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--body);font-family:var(--sans);line-height:1.62;font-size:15.5px}
+ .wrap{max-width:940px;margin:0 auto;padding:52px 24px 96px}
+ .eyebrow{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:1.5px;margin:0 0 12px}
+ h1{font-family:var(--serif);font-size:33px;color:var(--ink);margin:0 0 12px;letter-spacing:-.4px;line-height:1.15}
+ .dek{font-family:var(--serif);color:#586470;font-size:18px;line-height:1.5;margin:0 0 16px;max-width:74ch}
+ .nav{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0 6px}
+ .nav a{font-size:13px;color:var(--accent);text-decoration:none;border:1px solid #cdd8e2;border-radius:20px;padding:5px 13px}
+ .nav a:hover{background:var(--zone)}
+ .pill{font-size:11px;font-weight:700;letter-spacing:.5px;color:#fff;background:linear-gradient(160deg,#8a5a1a,#6f4715);border-radius:20px;padding:6px 13px}
+ h2{font-size:12px;letter-spacing:1.6px;text-transform:uppercase;color:var(--faint);margin:50px 0 8px;padding-bottom:8px;border-bottom:1px solid var(--rule)}
+ h2 .n{color:var(--accent);font-weight:700;margin-right:8px}
+ h3{font-size:17px;color:var(--ink);margin:22px 0 6px;font-family:var(--serif)}
+ p{margin:0 0 14px;max-width:76ch} .lead{font-size:16.5px}
+ a.inl{color:var(--accent);text-decoration:none;border-bottom:1px solid #cdd8e2}
+ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:#eef1f4;padding:1px 5px;border-radius:4px}
+ table{border-collapse:collapse;width:100%;font-size:13px;margin:12px 0}
+ th,td{text-align:right;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+ th:first-child,td:first-child{text-align:left}
+ th{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+ td.ok{color:var(--ok)} td.warn{color:var(--warn)} td.bad{color:var(--bad)}
+ .note{background:var(--zone);border:1px solid #dde6ef;border-radius:12px;padding:15px 18px;font-size:13.5px;color:#42525f;margin:16px 0}
+ .flag{background:#fbf3e8;border:1px solid #f0dcc0;border-radius:12px;padding:15px 18px;font-size:13.5px;color:#5c4a2e;margin:16px 0}
+ figure{margin:18px 0}svg{width:100%;height:auto;display:block}
+ figcaption{font-size:12.5px;color:var(--muted);font-style:italic;margin-top:8px;text-align:center}
+ .foot{margin-top:52px;padding-top:20px;border-top:1px solid var(--rule);color:var(--faint);font-size:12.5px;line-height:1.7}
+ .foot a{color:var(--accent);text-decoration:none;border-bottom:1px solid #cdd8e2}
+ @media(max-width:680px){h1{font-size:27px}}
+</style></head><body><main class="wrap">
+
+ <p class="eyebrow">AI Inference &amp; Systems · Problem Statement + Literature Survey</p>
+ <h1>The fabric is the next wall</h1>
+ <p class="dek">AI at scale is a data-movement problem, not an arithmetic one. The cluster is a memory hierarchy, and its outer tiers — the interconnect — are becoming the binding constraint. This is a <strong>problem statement and a survey of the art</strong>, read through a communications architect's lens. It is <strong>not a result and makes no performance claim</strong>: the goal is to frame the question clearly and be honest about what is already solved versus open.</p>
+ <div class="nav">
+   <a href="system-capacity.html">← The bandwidth budget</a>
+   <a href="memory-wall.html">The memory wall ↗</a>
+   <a href="index.html">Portfolio home</a>
+   <span class="pill">PROBLEM STATEMENT · NOT A RESULT</span>
+ </div>
+
+ <div class="flag"><strong>How to read this.</strong> Everything below is <em>reasoning and prior-art survey</em>, plus one deliberately <em>first-order</em> contention model used only to illustrate the reasoning. No number here is a benchmark or a claim. Where the art already solves something, this says so; where I am asserting a hypothesis, it is labelled as such. The contribution I am comfortable defending is the framing and the questions — not a measured win.</p></div>
+
+ <h2><span class="n">01</span>The cluster is a memory hierarchy</h2>
+ <p class="lead">A modern AI system is not one machine — it is a hierarchy of data-movement tiers, each roughly an order of magnitude slower and costlier per byte than the one inside it. The entire architecture is a fight to <em>not</em> cross the next boundary.</p>
+ <table>
+   <tr><th>Tier</th><th>Scope</th><th>Fabric</th><th>Order-of-magnitude BW</th><th>Latency</th></tr>
+   <tr><td>On-chip SRAM</td><td>within a die</td><td>NoC</td><td>~TB/s ×10s</td><td>ns</td></tr>
+   <tr><td>HBM</td><td>GPU-local memory</td><td>stacked DRAM</td><td>~TB/s</td><td>~100 ns</td></tr>
+   <tr><td><strong>Scale-up</strong></td><td>GPU↔GPU, one domain</td><td>NVLink / NVSwitch</td><td>~TB/s (aggregate)</td><td>sub-µs</td></tr>
+   <tr><td><strong>Scale-out</strong></td><td>node↔node</td><td>InfiniBand / RoCE</td><td>~tens of GB/s / NIC</td><td>µs+</td></tr>
+ </table>
+ <p><strong>Scale-up</strong> means making one machine bigger — adding GPUs inside a tightly-coupled NVLink domain (a DGX, or a GB200 NVL72 acting as one big GPU). <strong>Scale-out</strong> means adding machines — connecting nodes over a network. The jump from scale-up to scale-out is the steepest cliff in the hierarchy, and it is exactly where large-model training and disaggregated inference are forced to live. That cliff is the wall this piece is about.</p>
+
+ <h2><span class="n">02</span>Collectives and the barrier</h2>
+ <p class="lead">Distributed AI communicates through <em>collective operations</em> — all-reduce, all-gather, reduce-scatter, all-to-all — implemented on GPU by <code>NCCL</code>. The defining property, for our purposes, is that most of them are <strong>barrier-synchronized</strong>.</p>
+ <p>Synchronous data-parallel training is bulk-synchronous: <em>compute gradients → all-reduce them → update → repeat</em>. The all-reduce is a barrier — every participant must contribute and receive the summed result before anyone proceeds, so its completion time is set by the <strong>slowest</strong> participant (max-over-participants). Tensor parallelism fires the same barrier many times <em>per token</em>, which is why it is kept inside the low-latency scale-up domain. Pipeline parallelism replaces the global barrier with producer–consumer hand-offs whose idle gaps are called <em>bubbles</em>. Disaggregated inference adds another hand-off: a prefill GPU must finish and <strong>transfer the KV cache</strong> before decode can start.</p>
+ <figure>
+  <svg viewBox="0 0 900 190" role="img" aria-label="Ring all-reduce: participants pass chunks around a ring; completion waits for the slowest link.">
+   <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="#2f3e50"/></marker>
+   <text x="20" y="24" font-size="12.5" font-weight="700" fill="#2f3e50">RING ALL-REDUCE — the barrier is the slowest link in each step</text>
+   <g font-size="12" fill="#2f3e50">
+   <circle cx="130" cy="110" r="34" fill="#fff" stroke="#2f3e50" stroke-width="1.4"/><text x="130" y="114" text-anchor="middle">GPU0</text>
+   <circle cx="330" cy="70"  r="34" fill="#fff" stroke="#2f3e50" stroke-width="1.4"/><text x="330" y="74" text-anchor="middle">GPU1</text>
+   <circle cx="560" cy="70"  r="34" fill="#fff" stroke="#2f3e50" stroke-width="1.4"/><text x="560" y="74" text-anchor="middle">GPU2</text>
+   <circle cx="760" cy="110" r="34" fill="#fff" stroke="#2f3e50" stroke-width="1.4"/><text x="760" y="114" text-anchor="middle">GPU3</text>
+   </g>
+   <path d="M164,104 L296,76"  stroke="#43648f" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+   <path d="M364,70 L526,70"   stroke="#a4443a" stroke-width="3" fill="none" marker-end="url(#ar)"/>
+   <path d="M594,76 L726,104"  stroke="#43648f" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+   <path d="M760,144 Q445,205 130,144" stroke="#43648f" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+   <text x="445" y="52" text-anchor="middle" font-size="11.5" fill="#a4443a" font-weight="700">congested link → this step (and the whole all-reduce) waits on it</text>
+  </svg>
+  <figcaption>Ring all-reduce: 2(P−1) steps, each participant passing a chunk to its neighbor. A single congested link stalls the step, and the barrier stalls everyone. Tree / double-binary-tree change the constant, not the fragility.</figcaption>
+ </figure>
+
+ <h2><span class="n">03</span>The observation (a hypothesis, not a claim)</h2>
+ <p class="lead">Put barrier-synchronized collective traffic and independent traffic (KV-cache transfers, disaggregated prefill→decode) on one contended fabric, and a tension appears that per-flow fairness handles badly.</p>
+ <p>Because a collective completes at the <em>max</em> over participants, per-flow "fairness" — which lets independent traffic take an equal share of every link — is arguably the <strong>wrong objective</strong> for it: a small amount of fair-share contention on the critical path stalls the entire step. The reasoning suggests a two-part policy: (1) protect the barrier (schedule the long-pole flow ahead of traffic that has slack), and (2) for the <em>approximable</em> traffic, gate by <strong>value-per-cost</strong> — keep a transfer in proportion to its importance divided by its byte-hop cost, so under stress the far, low-value bytes are shed first. Inside a single collective you cannot drop a participant without stranding the barrier, so there the lever is uniform payload compression, not per-flow dropping.</p>
+ <div class="note"><strong>This is a hypothesis worth testing, framed by a communications architect — not a demonstrated result.</strong> It is the datacenter-scale version of two ideas I have worked with in modem silicon: deadline/slack scheduling of a contended medium, and shedding the least-valuable load first under pressure (graceful degradation). Whether it is worth implementing over existing congestion control is an empirical question (§05, §06).</p></div>
+
+ <h2><span class="n">04</span>What the art already does — an honest survey</h2>
+ <p class="lead">The mechanisms here are mature, and it matters to say so plainly. The open part is narrower than "add QoS to the fabric."</p>
+ <table>
+   <tr><th>Capability</th><th>Representative art</th><th>Status</th></tr>
+   <tr><td>Programmed QoS tiers (scale-out)</td><td>InfiniBand <strong>Service Levels / Virtual Lanes</strong> + VL arbitration tables</td><td>Mature (≈20 yr). Mechanism exists.</td></tr>
+   <tr><td>In-network reduction of collectives</td><td><strong>SHARP</strong> (reduce in the NVSwitch)</td><td>Shipping. Moves fewer bytes by computing in the fabric.</td></tr>
+   <tr><td>Congestion control / load balancing</td><td>DCQCN (RoCE); adaptive routing; Spectrum-X</td><td>Mature / active.</td></tr>
+   <tr><td>Collective scheduling</td><td>Themis, Crux, vClos</td><td>Active.</td></tr>
+   <tr><td>Congestion-adaptive gradient compression</td><td>NetSenseML, L-GRECO, Deep Gradient Compression</td><td>Established.</td></tr>
+   <tr><td>KV-aware / topology-aware movement</td><td>Mooncake, NetKV, DistServe, "Internet for the KV Cache"</td><td>Active, 2024–2026.</td></tr>
+ </table>
+ <p><strong>SHARP deserves emphasis:</strong> it is the industry already doing "compute where the data is, move fewer bytes" — the same principle as near-memory reduction, one tier out. It is a proof point for the data-movement thesis, not a competitor to it. And crucially: the QoS <em>mechanism</em> (VL arbitration) has existed for two decades. What is not standard is a <em>policy</em> that is (a) <strong>barrier-aware</strong> — today's Service-Level assignment is static per-connection and has no notion that a flow is one participant in a synchronized collective — and (b) <strong>content-aware</strong> by value-per-byte-hop rather than by a fixed class. So the open slice is the policy and the cheap importance signal that would drive it, riding lanes that already exist.</p>
+
+ <h2><span class="n">05</span>An illustrative model (loudly bounded)</h2>
+ <p class="lead">To make the reasoning concrete — not to prove it — a first-order fluid contention model puts collective (barrier) and KV (independent) traffic on shared links and compares fair-share against the policy above, with the control levers <em>decomposed</em> so nothing is conflated.</p>
+ <table>
+   <tr><th>Policy (at high load)</th><th>All-reduce mean</th><th>Quality cost</th><th>What it is</th></tr>
+   <tr><td>Baseline — fair-share</td><td>1.00× (ref)</td><td>none</td><td>independent traffic steals the barrier's critical path</td></tr>
+   <tr><td>+ barrier priority (lever 1)</td><td class="ok">~1.25×</td><td class="ok">none</td><td>protect the long-pole — a free structural win</td></tr>
+   <tr><td>+ gate + compress (levers 2/3)</td><td>further ~1.6×</td><td class="warn">spends collective quality</td><td>a knob, not a free lunch</td></tr>
+   <tr><td>value-per-cost gating</td><td>—</td><td>~3.5% value</td><td>sheds ~9% of bytes (≈2.6× cheaper in value than bytes)</td></tr>
+ </table>
+ <div class="flag"><strong>Bounds, stated as loudly as the numbers.</strong> This is a first-order fluid model, not cycle-accurate and not a benchmark. The magnitudes are <em>directional and workload-dependent</em>; move the traffic mix and they move. The only thing the model is meant to show is the <em>shape</em>: barrier priority is a structural, quality-free win that grows with contention; compression is a separate knob that trades collective quality for speed; and value-per-cost sheds the cheap bytes first. I would not put any of these numbers in front of you as a result — the code (<code>fabric_qos_sim.py</code>) is published precisely so the assumptions are inspectable.</p></div>
+
+ <h2><span class="n">06</span>What I do not yet know — the questions I would own</h2>
+ <p>The honest gaps, which are the actual research:</p>
+ <p>• <strong>Ring vs. tree.</strong> The model uses a simplified barrier; a real ring all-reduce bottlenecks as the sum over steps of each step's slowest link, and tree/double-binary-tree differ again. Does the conclusion survive the real algorithm's structure?<br>
+ • <strong>SHARP and adaptive routing.</strong> In-network reduction removes collective bytes from the fabric and adaptive routing spreads load — both <em>mitigate</em> the contention the argument relies on. How much residual effect is left to justify a policy change?<br>
+ • <strong>The value signal.</strong> Value-per-cost needs a cheap, off-critical-path importance estimate for a transfer — the same problem as a memory-side KV selector, one tier out. Can it be computed without paying more than it saves?<br>
+ • <strong>Versus existing CC.</strong> Does barrier-aware scheduling beat well-tuned DCQCN + adaptive routing enough to matter, or does congestion control already capture most of it?</p>
+ <p>Framing those four questions precisely, and knowing which are cheap to answer, is the part I am confident about.</p>
+
+ <h2><span class="n">07</span>Why a communications architect sees it this way</h2>
+ <p>A collective is a <strong>synchronization barrier across a distributed fabric</strong>. Barriers, deadline/slack scheduling of a shared medium, and graceful degradation under overload are the daily material of modem and RAN silicon — a UE→RU→DU→CU pipeline is a hierarchical distributed system with hard-real-time sync points. In that language, fair-sharing a fabric between collectives and independent traffic is <em>priority inversion</em>: low-priority, droppable traffic steals from high-priority, synchronized traffic, and the whole machine waits on the barrier. The observation in §03 is that framing applied one domain over. That is the lens; the measured answer is the work that would follow.</p>
+
+ <div class="foot">
+  <strong>Problem statement &amp; survey — not a result.</strong> First-order reasoning and prior-art map; the illustrative model (<code>fabric_qos_sim.py</code>) is directional only.<br>
+  <strong>Sources:</strong> InfiniBand QoS (SL/VL) — NVIDIA Docs; NVIDIA SHARP; DCQCN; NCCL; Themis (arXiv:2110.04478), Crux (SIGCOMM'24); NetSenseML (arXiv:2506.16235); Mooncake (arXiv:2407.00079), NetKV (arXiv:2606.03910). Part of <a href="index.html">jimchakra.github.io/AI</a>.
+ </div>
+</main></body></html>

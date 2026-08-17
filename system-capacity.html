@@ -201,6 +201,16 @@
  <strong>4. Quality is the ceiling, measured — and on the right metric.</strong> The cut→quality curve is a real Δperplexity model (Qwen2.5-1.5B / WikiText-2), not an assumption — but perplexity is a floor check, not the headline: read-selection’s real risk is long-range recall, caught by long-context task accuracy (§04, Quest’s LongBench / passkey results), not next-token fit. All results are stated at <em>iso-quality</em> — a published quality-neutral KV budget — so the gain is efficiency at a fixed operating point, not quality traded for speed. Directional for a 70B/128K deployment, not a datasheet guarantee.
  </div>
 
+ <h3>Does selection actually save DRAM bandwidth? — the read-granularity question</h3>
+ <p>A fair objection, and the one that quietly kills most "sparse access saves bandwidth" claims: DRAM cannot fetch one INT4 element. It activates a row and moves a minimum <em>burst</em> across the pins — ~32&nbsp;B on an HBM3/GDDR6 pseudo-channel, ~64&nbsp;B on a GDDR6 32-bit channel or DDR5. So a single <em>scattered</em> INT4 costs a full burst — up to ~128× read amplification. Whether content-aware selection saves <em>read</em> bandwidth therefore depends entirely on the granularity of what is selected — not on the number format.</p>
+ <table>
+   <tr><th>Selection mode</th><th>Realized read saving (57% cut, INT4)</th><th>Why</th></tr>
+   <tr><td>KV-<strong>page</strong> selection (Quest)</td><td class="ok">2.33× — ~100% burst efficiency</td><td>a page is a contiguous ~1–16&nbsp;KB run, 50–800× the burst; identical for INT16/8/4</td></tr>
+   <tr><td>Unstructured per-<strong>element</strong> sparsity</td><td class="bad">~1.0× — ≈ none</td><td>scattered survivors: at INT4 a 32&nbsp;B burst holds 64 elements, so even keeping 1% still touches ~47% of bursts</td></tr>
+   <tr><td>Compressed <strong>return</strong> (either mode)</td><td class="ok">full</td><td>survivors are packed contiguously before crossing the interface — burst-efficient by construction</td></tr>
+ </table>
+ <div class="note"><strong>The rule this exposes.</strong> A selection saves read bandwidth only when the selected unit is <em>block-structured</em> and at least one DRAM burst wide (~600&nbsp;B recovers 95% efficiency). Everything this architecture selects — KV pages, down-projection weight columns, whole experts — is a contiguous ~KB run that clears that bar by 50–800×, so the ~2× read saving is granularity-robust across HBM3, GDDR6, and DDR5 and across INT16/8/4. The failure mode is <em>unstructured per-element</em> sparsity — a compute/energy win, not a bandwidth win, unless it is made block-structured. And the tax is <em>read-side only</em>: the compressed return is always realized, which is why selecting at page granularity is not an optimization detail but the whole point. Model: <code>dram_read_granularity.py</code>.</div>
+
  <h2><span class="n">09</span>How to read this — method &amp; where microarchitecture enters</h2>
  <p class="lead">Two questions a silicon architect will ask, answered up front.</p>
 

@@ -63,6 +63,7 @@
       <li><a href="study.html">Compute at the Memory Boundary</a> — the full study: thesis → filed patent → verified RTL → grounded synthesis → real-model validation.</li>
       <li><a href="graceful-degradation.html">Bend, don't break</a> — the systems lens: reliability past P99 and tiered QoS, with four live simulations.</li>
       <li><a href="system-capacity.html">The bandwidth budget</a> — the numbers: a datasheet-calibrated full-system model showing &gt;2× decode capacity, with the $/token verdict and the method stated.</li>
+      <li><a href="fabric.html">The fabric is the next wall</a> — the scale-out lens: a problem statement &amp; literature survey on collective communication, barriers, and QoS across the cluster fabric (reasoning, not a result).</li>
       <li><a href="digital-twin.html">The digital twin, finally affordable</a> — the economics: why AI makes re-spin avoidance the default, not a luxury.</li>
       <li><a href="kv-selector-spec.html">KV-selector spec</a> — the coprocessor deep-dive (block &amp; timing diagrams, area/latency).</li>
       <li><a href="https://jimchakra.github.io/6G-NTN/6g_du_rd_ai.html">6G AI RU/DU study</a> — breadth: the same principles in a 200-core RAN SoC.</li>
@@ -92,6 +93,13 @@
       <div class="card-title">The bandwidth budget <span class="arw">&#8594;</span></div>
       <div class="card-sub">Same silicon, everything else equal: &gt;2× decode capacity from moving fewer bytes — calibrated to Tenstorrent&rsquo;s published numbers.</div>
       <p class="card-desc">A first-order full-system (compute die + memory die) model on a Blackhole-class chip, calibrated so the baseline reproduces Tenstorrent&rsquo;s published 350 tok/s/user on DeepSeek-R1. Live explorers: an animated apples-to-apples race, the roofline, cut&rarr;capacity, the prefill/decode split, an anatomy-of-a-token timing view, concurrency &amp; QoS, and a $/token &amp; J/token PPA verdict — king of $/token, honest about energy and area. States its own method (static capacity analysis) and where microarchitecture enters.</p>
+    </a>
+
+    <a class="card" href="fabric.html">
+      <div class="card-meta">Problem statement &amp; survey · scale-out fabric · new</div>
+      <div class="card-title">The fabric is the next wall <span class="arw">&#8594;</span></div>
+      <div class="card-sub">A problem statement and literature survey — not a result — on why the interconnect is the next wall, read through a communications architect&rsquo;s lens.</div>
+      <p class="card-desc">The data-movement thesis, one tier out: the cluster is a memory hierarchy whose outer tiers (NVLink, network) are the emerging bottleneck. Explains collectives and the barrier (ring all-reduce, max-over-participants), surveys the mature art honestly (InfiniBand SL/VL, SHARP, DCQCN, NCCL, Mooncake/NetKV), and reasons &mdash; as a hypothesis, not a claim &mdash; that per-flow fairness is the wrong QoS objective for barrier-synchronized traffic. Includes a deliberately first-order, loudly-bounded contention model, and states plainly what is known versus open.</p>
     </a>
 
     <a class="card" href="small-frees-big.html">
