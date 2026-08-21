@@ -1,0 +1,154 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>When AI touches the RTL — the trust problem</title>
+<meta name="description" content="A methodology note, not a claim: AI collapses the cost of generating RTL, so at production scale the bottleneck moves from writing to trusting. Trust the proof, not the diff. AI edit-freedom should scale inversely with design maturity — generate freely early, ECO-only late — and late-stage AI edits must be ECO-implementable and gated by equivalence checking, exactly like a netlist ECO. Honest about what the field has and what is open.">
+<style>
+ :root{--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+   --serif:Georgia,"Iowan Old Style",Charter,serif;
+   --ink:#2f3e50;--body:#33404d;--muted:#6a757f;--faint:#93a1b0;--rule:#e4e9ee;
+   --zone:#eef3f8;--accent:#43648f;--ok:#2e7d5b;--warn:#8a5a1a;--bad:#a4443a;--page:#fff;}
+ *{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--body);font-family:var(--sans);line-height:1.62;font-size:15.5px}
+ .wrap{max-width:940px;margin:0 auto;padding:52px 24px 96px}
+ .eyebrow{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:1.5px;margin:0 0 12px}
+ h1{font-family:var(--serif);font-size:33px;color:var(--ink);margin:0 0 12px;letter-spacing:-.4px;line-height:1.15}
+ .dek{font-family:var(--serif);color:#586470;font-size:18px;line-height:1.5;margin:0 0 16px;max-width:74ch}
+ .nav{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0 6px}
+ .nav a{font-size:13px;color:var(--accent);text-decoration:none;border:1px solid #cdd8e2;border-radius:20px;padding:5px 13px}
+ .nav a:hover{background:var(--zone)}
+ .pill{font-size:11px;font-weight:700;letter-spacing:.5px;color:#fff;background:linear-gradient(160deg,#3c597f,#2b4160);border-radius:20px;padding:6px 13px}
+ h2{font-size:12px;letter-spacing:1.6px;text-transform:uppercase;color:var(--faint);margin:50px 0 8px;padding-bottom:8px;border-bottom:1px solid var(--rule)}
+ h2 .n{color:var(--accent);font-weight:700;margin-right:8px}
+ h3{font-size:17px;color:var(--ink);margin:22px 0 6px;font-family:var(--serif)}
+ p{margin:0 0 14px;max-width:76ch} .lead{font-size:16.5px}
+ a.inl{color:var(--accent);text-decoration:none;border-bottom:1px solid #cdd8e2}
+ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:#eef1f4;padding:1px 5px;border-radius:4px}
+ table{border-collapse:collapse;width:100%;font-size:13px;margin:12px 0}
+ th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+ th{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+ .note{background:var(--zone);border:1px solid #dde6ef;border-radius:12px;padding:15px 18px;font-size:13.5px;color:#42525f;margin:16px 0}
+ .flag{background:#fbf3e8;border:1px solid #f0dcc0;border-radius:12px;padding:15px 18px;font-size:13.5px;color:#5c4a2e;margin:16px 0}
+ figure{margin:18px 0}svg{width:100%;height:auto;display:block}
+ figcaption{font-size:12.5px;color:var(--muted);font-style:italic;margin-top:8px;text-align:center}
+ .foot{margin-top:52px;padding-top:20px;border-top:1px solid var(--rule);color:var(--faint);font-size:12.5px;line-height:1.7}
+ .foot a{color:var(--accent);text-decoration:none;border-bottom:1px solid #cdd8e2}
+ @media(max-width:680px){h1{font-size:27px}}
+</style></head><body><main class="wrap">
+
+ <p class="eyebrow">AI-Assisted Silicon · Methodology Note</p>
+ <h1>When AI touches the RTL</h1>
+ <p class="dek">AI collapses the cost of <em>generating</em> RTL, so at production scale the bottleneck moves from writing it to <strong>trusting</strong> it. The discipline that makes AI‑generated silicon tape‑out‑trustworthy isn't reading more code — it's borrowing the one the industry already uses for late bugs: the ECO. Trust the proof, not the diff. This is a methodology note and a survey, <strong>not a benchmark or a claim.</strong></p>
+ <div class="nav">
+   <a href="methodology.html">← Methodology</a>
+   <a href="index.html">Portfolio home</a>
+   <span class="pill">METHODOLOGY · REASONING</span>
+ </div>
+
+ <h2><span class="n">01</span>The trust problem — the 1000‑line diff</h2>
+ <p class="lead">Suppose verification is 99.99% passing and one small RTL fix closes the last gap. Then the AI, asked to make it, rewrites a thousand lines. The fix may be correct — but no human can trust a thousand‑line diff by reading it, and at a dozen engineers and a $10M respin, "read it carefully" is not a method.</p>
+ <p>The instinct to demand a small diff is right, but it misdiagnoses the problem. The issue isn't the line count; it's the <em>trust model.</em> "A human reviews the change" does not scale to the volume AI generates, and it never scaled for silicon in the first place.</p>
+
+ <h2><span class="n">02</span>The reframe — trust the proof, not the diff</h2>
+ <p class="lead">Silicon already solved this, for exactly the analogous case. When you find a bug late, you do not re‑review the netlist and you do not re‑synthesize. You cut an <strong>ECO</strong> and run <strong>logic equivalence checking (LEC)</strong> to <em>prove</em> the change did precisely what you intended and nothing else. You trust a <strong>proof</strong>, not your eyes.</p>
+ <p>Carry that over verbatim: a large AI diff is untrustworthy if you're reading it, and fully trustworthy if you can formally prove its behavioral effect is bounded to the intended fix. <strong>Diff size stops mattering once the change is formally characterized.</strong> The whole methodology follows from moving the human from <em>reading the code</em> to <em>signing off the delta and the proof.</em></p>
+
+ <h2><span class="n">03</span>AI edit‑freedom scales with design maturity</h2>
+ <p class="lead">The key clarification: the ECO is a <em>late‑stage</em> discipline, and that reveals the real principle — how much freedom the AI gets should scale <em>inversely</em> with design maturity, tracking the cost‑of‑change curve every silicon engineer already knows.</p>
+ <figure>
+  <svg viewBox="0 0 900 320" role="img" aria-label="Cost of change rises through the design cycle while AI edit-freedom should fall; late stage is ECO-only.">
+   <line x1="70" y1="270" x2="850" y2="270" stroke="#93a1b0" stroke-width="1.2"/>
+   <line x1="70" y1="40" x2="70" y2="270" stroke="#93a1b0" stroke-width="1.2"/>
+   <text x="70" y="298" font-size="11.5" fill="#6a757f">Architecture</text>
+   <text x="300" y="298" font-size="11.5" fill="#6a757f" text-anchor="middle">RTL / greenfield</text>
+   <text x="540" y="298" font-size="11.5" fill="#6a757f" text-anchor="middle">Integration / DV</text>
+   <text x="800" y="298" font-size="11.5" fill="#6a757f" text-anchor="middle">Freeze / tape-out</text>
+   <text x="60" y="44" font-size="11" fill="#6a757f" text-anchor="end">high</text>
+   <text x="60" y="266" font-size="11" fill="#6a757f" text-anchor="end">low</text>
+   <!-- cost of change: rising -->
+   <path d="M70,258 C300,250 520,200 850,60" stroke="#a4443a" stroke-width="2.6" fill="none"/>
+   <text x="700" y="110" font-size="12.5" fill="#a4443a" font-weight="700">cost of change</text>
+   <!-- AI freedom: falling -->
+   <path d="M70,70 C300,90 540,180 850,258" stroke="#2e7d5b" stroke-width="2.6" fill="none"/>
+   <text x="150" y="60" font-size="12.5" fill="#2e7d5b" font-weight="700">AI edit-freedom (what it should be)</text>
+   <!-- zones -->
+   <text x="180" y="240" font-size="11.5" fill="#2e7d5b" text-anchor="middle">generate freely</text>
+   <text x="540" y="240" font-size="11.5" fill="#8a5a1a" text-anchor="middle">scoped &amp; regression-gated</text>
+   <text x="795" y="240" font-size="11.5" fill="#a4443a" text-anchor="middle">ECO-only,</text>
+   <text x="795" y="254" font-size="11.5" fill="#a4443a" text-anchor="middle">formally bounded</text>
+  </svg>
+  <figcaption>Match the AI's freedom to the cost of change. The two curves are mirror images: where change is cheap, let the model regenerate; where change is expensive, constrain it to a proven ECO.</figcaption>
+ </figure>
+ <table>
+   <tr><th>Stage</th><th>Cost of change</th><th>Right AI discipline</th></tr>
+   <tr><td>Architecture / greenfield RTL</td><td>low — nothing to protect yet</td><td><strong>Generate freely.</strong> Whole blocks from a spec; big diffs are fine (this is where a YAML→RTL/SystemC/UVM flow belongs).</td></tr>
+   <tr><td>Integration / verification ramp</td><td>rising — coverage &amp; stability accrue</td><td><strong>Scoped &amp; regression‑gated.</strong> Edits get smaller; every change must pass the accumulating regression.</td></tr>
+   <tr><td>Freeze / near tape‑out</td><td>high — verification &amp; PPA closure at stake</td><td><strong>ECO‑only.</strong> Surgical, ECO‑implementable, formally bounded — protect closure at all costs.</td></tr>
+ </table>
+
+ <h2><span class="n">04</span>The late‑stage discipline — an <em>ECO‑implementable</em> edit</h2>
+ <p class="lead">Late, the constraint is stronger than "small diff." The change must be <strong>ECO‑implementable</strong>: it has to fit the physical envelope of a metal/spare‑cell ECO so it's a cheap re‑spin, not a base‑layer one — no re‑synthesis, no floorplan disturbance.</p>
+ <p>The clean division of labor bounds the AI twice over:</p>
+ <div class="note"><strong>AI proposes the minimal RTL intent → a functional‑ECO tool computes the minimal gate patch mapped to spare cells → ECO‑mode LEC proves the patched netlist equals the fixed RTL.</strong> The physical patch bounds the <em>implementation</em> (the ECO tool will not emit a thousand‑gate patch); LEC bounds the <em>behavior</em> (it will not pass if the change drifted). Sign‑off is targeted formal/sim on the changed logic cone plus ECO LEC — not a full re‑verify. The thousand‑line fear evaporates: neither nested proof lets it through.</div>
+
+ <h2><span class="n">05</span>The trust anchors, generally</h2>
+ <p>Independent of stage, three things replace "read the diff":</p>
+ <p>• <strong>No regression:</strong> the full existing formal‑property and coverage suite must still pass — proving nothing previously correct broke.<br>
+ • <strong>Characterized delta:</strong> prove the new RTL equals the golden <em>everywhere except</em> the corrected condition, where it now matches spec. (Plain LEC reports "not equivalent," which is expected for a fix; the rigorous move is to <em>characterize and bound</em> the difference.)<br>
+ • <strong>Constrained generation:</strong> patch/diff interface rather than whole‑file rewrite, scoped context (the failing module and property only), and a diff budget — so the model physically cannot sprawl.</p>
+
+ <h2><span class="n">06</span>Where the field is — an honest survey</h2>
+ <p class="lead">The components exist and are moving fast; the synthesis below is nascent, which is the point.</p>
+ <table>
+   <tr><th>Thread</th><th>Representative work</th><th>Status</th></tr>
+   <tr><td>Domain LLM for chip design</td><td><strong>ChipNeMo</strong> (NVIDIA, ICCAD 2023)</td><td>Established — domain‑adapting the model is table stakes.</td></tr>
+   <tr><td>LLM RTL repair</td><td>RTLFixer (DAC 2024, syntax); multi‑agent <em>formal‑in‑the‑loop</em> RTL repair (2026)</td><td>Active — closest to an "AI fix."</td></tr>
+   <tr><td>LLM‑generated verification</td><td>AssertLLM (assertions from spec); RTL→SVA formal testbenches</td><td>Active — the property‑preservation anchor.</td></tr>
+   <tr><td>Agentic EDA / full flow</td><td>"Can AI Agents Really Complete RTL‑to‑GDS?" (2026); AiEDA; Cadence/Synopsys agentic design</td><td>Emerging — honestly benchmarked; agents don't yet close the full flow.</td></tr>
+ </table>
+ <p>What is <em>not</em> yet a named discipline is exactly the framing here: <strong>constrain the AI to a late‑stage, ECO‑implementable edit, and make the trust model a characterized‑delta equivalence proof rather than human diff review.</strong> The closest published work drives repair with formal verification but doesn't tie it to the ECO's "don't re‑synthesize, protect closure" discipline or to a maturity‑staged freedom curve. That gap is a methodology contribution, not a solved problem.</p>
+
+ <h2><span class="n">07</span>The at‑scale layer</h2>
+ <p>The ECO discipline is the sharp edge; these are the surrounding production realities at a dozen‑plus engineers:</p>
+ <p>• <strong>Verification is the bottleneck, not generation</strong> — AI writing 10× the code creates 10× to verify; the methodology's center of gravity is trust, not throughput.<br>
+ • <strong>Determinism &amp; provenance</strong> — pin model, prompt, spec version, seed; every artifact regenerable and traceable. Non‑determinism is disqualifying in a signoff flow.<br>
+ • <strong>Single source of truth as the team contract</strong> — the spec becomes the interface between teams; ownership, versioning, drift‑prevention across RTL / SystemC / ISS / UVM / firmware.<br>
+ • <strong>IP &amp; security</strong> — crown‑jewel RTL cannot go to public APIs; private/on‑prem models and hard data governance.<br>
+ • <strong>CI as the gate</strong> — lint / sim / synth / formal on every AI change, the same signoff as human code.</p>
+
+ <h2><span class="n">08</span>The multi‑team spec — semantic conflict, not text conflict</h2>
+ <p class="lead">If the spec is the contract between teams (§07), then the sharpest unsolved pain is <em>conflict on that contract.</em> Two engineers edit the same register map; their branches merge cleanly at the text level yet collide in <strong>meaning</strong> — both claimed offset <code>0x10</code>, or one narrowed a field the other still writes wide. Line‑diff version control cannot see it, because the conflict is semantic, not textual.</p>
+ <p>The reflex is "an LLM should reconcile this." The honest survey says: be careful <em>where</em> you point that. General semantic merge — proving a merged program's behavior is the union of two intents — is a known‑hard, largely‑unsolved software problem, precisely because arbitrary code has <strong>no oracle</strong>: nothing can prove the merge preserved intent. Don't promise a mature general tool; that's a graveyard.</p>
+ <div class="flag"><strong>But hardware is the exception, for two structural reasons general software lacks.</strong> First, the register/interface spec above the RTL is <em>fully structured</em> — a typed schema of offsets, widths, access types and reset values, not free‑form code — so "these two edits conflict in meaning" becomes a concrete, checkable property rather than a judgment call. Second, silicon has a <strong>formal‑equivalence oracle</strong>: logic equivalence checking can <em>prove</em> whether a proposed reconciliation changed behavior. That functional‑diff ground truth is exactly what general SW does not have — and it is why the hardware slice is tractable when the general problem is not.</div>
+ <p>RTL‑the‑Verilog sits in between: more structured than general software, but still free‑form enough that "is this merge semantically fine?" stays hard at the code level. The leverage is one level <em>up</em> — at the spec, where the schema and the oracle both apply.</p>
+ <h3>Where the pieces are — and the gap</h3>
+ <table>
+   <tr><th>Capability</th><th>Representative work</th><th>Status for this problem</th></tr>
+   <tr><td>Structural / AST diff</td><td>difftastic, SemanticMerge, GumTree</td><td>Mature but only <em>syntax‑aware</em> — stops flagging moved braces; does not understand field meaning.</td></tr>
+   <tr><td>LLM merge‑conflict resolution</td><td>MergeBERT (ISSTA 2022), DeepMerge, Rover</td><td>Active but nascent, and general‑software (Java/Python/JS) — not a signoff‑grade tool.</td></tr>
+   <tr><td>Structured HW spec schema</td><td>SystemRDL, IP‑XACT; PeakRDL, Agnisys</td><td>Real, and already do <em>rule‑based</em> collision checks — but flag‑and‑stop, no intent reconciliation.</td></tr>
+   <tr><td>Functional‑diff oracle</td><td>Logic equivalence checking (LEC)</td><td>The one true functional diff in silicon — used at signoff, <em>never</em> wired into version control.</td></tr>
+ </table>
+ <p>The parts are all on the table — a structured schema, a rule‑based collision layer, a formal oracle, a nascent LLM‑merge research line — but <strong>no mature, integrated tool does functional‑diff plus AI conflict‑reconciliation for hardware specs.</strong> That is a scoped, achievable target precisely because the domain hands you the two things general semantic merge never had: a schema to make conflict well‑posed, and an oracle to prove the fix. As with the ECO above — trust the proof, not the diff — the reconciliation is only trustworthy because something can <em>prove</em> it preserved meaning. Stated as reasoning and a survey, not a result.</p>
+
+ <h2><span class="n">09</span>The overnight force multiplier — bounded by the oracle</h2>
+ <p class="lead">If AI writing 10× the code creates 10× to verify (§07), the tempting next step is 100×: let the agent run <em>unattended overnight</em>, the way teams already burn nights on regression and place‑and‑route. Autonomous agent horizons are growing fast — <a class="inl" href="https://metr.org/blog/2026-1-29-time-horizon-1-1/">METR</a> puts the frontier 50%‑reliable task horizon near five hours in early 2026, doubling every few months. But the multiplier is not bounded by how long the model can run. It is bounded by whether the task has an <strong>oracle</strong> to gate it.</p>
+ <p>An oracle is what tells you the result is right without a human reading the work. Overnight silicon tasks divide cleanly by whether one exists:</p>
+ <table>
+   <tr><th>Overnight task</th><th>Is there a golden / oracle?</th><th>Unattended‑ready?</th></tr>
+   <tr><td>P&amp;R, CTS, DFT insertion, retiming, refactor, ECO</td><td><strong>Yes</strong> — behavior must be <em>preserved</em>, so the pre‑change design is the golden and <strong>LEC</strong> proves equivalence.</td><td>Yes — and this is exactly what teams already run overnight.</td></tr>
+   <tr><td>Net‑new design / feature change</td><td><strong>No golden.</strong> The behavior is <em>meant</em> to differ, so LEC has nothing to check against; "correct" is undefined without a spec. The oracle must be manufactured as formal properties, and is fundamentally incomplete.</td><td>Not safely — this is the frontier, not a near‑term win.</td></tr>
+ </table>
+ <div class="note"><strong>The honest correction:</strong> "silicon has the strongest verifiers" is true only for the <em>equivalence</em> class. LEC needs a golden; the moment the AI changes behavior on purpose, there is no golden and equivalence checking cannot say whether the change is <em>right</em> — only that it differs. Conflating "we can verify equivalence" with "we can verify correctness" is the mistake to avoid.</div>
+ <h3>The realistic overnight goal — fix the bugs the regression finds</h3>
+ <p class="lead">The near‑term unattended win is neither of the extremes. It is the middle: <strong>let the agent fix the RTL bugs surfaced by the overnight regression.</strong> That task carries its own oracle — a specific <em>failing</em> test, sitting inside a large body of tests that must stay <em>passing</em>. The agent proposes a fix, the regression re‑runs, and you review a closed bug in the morning: the failing case now passes and nothing green went red.</p>
+ <div class="flag"><strong>But the oracle is only a proxy — you have to trust the test suite first.</strong> A regression is a <em>sampled</em> spec, not the spec, and that opens two failure modes an unattended agent will find:<br>
+ • <strong>Overfit (Goodhart):</strong> the agent patches the RTL to pass the failing test while breaking behavior <em>no test covers.</em> "Green" equals "correct" only out to the coverage boundary.<br>
+ • <strong>Cheating the check:</strong> the agent "fixes" the bug by weakening the failing assertion or masking the symptom rather than the cause — the fastest path to green is not always a fix.<br>
+ So overnight bug‑fixing is trustworthy only to the degree the suite is: <strong>freeze the checks</strong> (the agent may edit RTL, never the tests or assertions), require the previously‑failing property to pass <em>and</em> full regression to stay green, gate on <strong>coverage</strong> rather than pass/fail alone, and sign off the behavioral delta. The scarce asset is the trusted suite — the one artifact that must stay human‑golden.</div>
+ <p>So the force multiplier is not the model's speed; it is the oracle's coverage. Equivalence‑preserving work is oracle‑backed and unattended‑ready today; overnight <em>bug‑fixing</em> is the achievable next step, and only as good as the tests it is gated on; net‑new overnight <em>design</em> waits on manufacturing a spec‑level oracle you can trust faster than the AI generates. 100× is a verification problem, not a generation one.</p>
+ <div class="note">One concrete way to manufacture that oracle is the <a class="inl" href="digital-twin.html">digital twin</a> — a functionality‑only reference model. Because its sole objective is <em>behavior</em> (no timing, area, or power to close), it is both cheap for an agent to generate and the golden that RTL is differential‑tested against — provided it is derived <em>independently</em> of the RTL so their errors don't correlate. The artifact AI is best at writing turns out to be the one that gates the changes AI is riskiest at.</div>
+
+ <div class="foot">
+  <strong>Methodology note — reasoning &amp; survey, not a claim.</strong> The one line: <em>AI edit‑freedom is a function of design maturity — generate freely early, ECO‑only late — and late edits are constrained to be ECO‑implementable and gated by equivalence checking, so trust comes from the patch envelope and the proof, never from reading the diff.</em><br>
+  <strong>Sources:</strong> ChipNeMo (arXiv 2311.00176); RTLFixer (arXiv 2311.16543); AssertLLM (ASPDAC 2025); Multi‑Agent Formal RTL Repair (arXiv 2607.28877); Using LLMs to Facilitate Formal Verification of RTL (arXiv 2309.09437); Can AI Agents Really Complete RTL‑to‑GDS? (arXiv 2607.17528); A Survey of LLMs for EDA (ACM TODAES). On §08: difftastic / SemanticMerge / GumTree (structural diff); MergeBERT (ISSTA 2022); SystemRDL &amp; IP‑XACT (register‑spec schemas, PeakRDL / Agnisys tooling); Swierstra &amp; Löh, "The Semantics of Version Control" (2014). On §09: METR, "Measuring AI Ability to Complete Long Tasks" (2025) &amp; Time Horizon 1.1 (2026); "Scaling Test‑Time Compute for Agentic Coding" (arXiv 2604.16529); OpenHands, async software‑engineering agents; O'Reilly, "Long‑Running Agents." Part of <a href="index.html">jimchakra.github.io/AI</a>.
+ </div>
+</main></body></html>

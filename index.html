@@ -64,6 +64,7 @@
       <li><a href="graceful-degradation.html">Bend, don't break</a> — the systems lens: reliability past P99 and tiered QoS, with four live simulations.</li>
       <li><a href="system-capacity.html">The bandwidth budget</a> — the numbers: a datasheet-calibrated full-system model showing &gt;2× decode capacity, with the $/token verdict and the method stated.</li>
       <li><a href="fabric.html">The fabric is the next wall</a> — the scale-out lens: a problem statement &amp; literature survey on collective communication, barriers, and QoS across the cluster fabric (reasoning, not a result).</li>
+      <li><a href="trusting-ai-silicon.html">When AI touches the RTL</a> — the methodology: how you trust AI-generated silicon at scale — the ECO discipline, and matching AI edit-freedom to design maturity.</li>
       <li><a href="digital-twin.html">The digital twin, finally affordable</a> — the economics: why AI makes re-spin avoidance the default, not a luxury.</li>
       <li><a href="kv-selector-spec.html">KV-selector spec</a> — the coprocessor deep-dive (block &amp; timing diagrams, area/latency).</li>
       <li><a href="https://jimchakra.github.io/6G-NTN/6g_du_rd_ai.html">6G AI RU/DU study</a> — breadth: the same principles in a 200-core RAN SoC.</li>
@@ -93,6 +94,13 @@
       <div class="card-title">The bandwidth budget <span class="arw">&#8594;</span></div>
       <div class="card-sub">Same silicon, everything else equal: &gt;2× decode capacity from moving fewer bytes — calibrated to Tenstorrent&rsquo;s published numbers.</div>
       <p class="card-desc">A first-order full-system (compute die + memory die) model on a Blackhole-class chip, calibrated so the baseline reproduces Tenstorrent&rsquo;s published 350 tok/s/user on DeepSeek-R1. Live explorers: an animated apples-to-apples race, the roofline, cut&rarr;capacity, the prefill/decode split, an anatomy-of-a-token timing view, concurrency &amp; QoS, and a $/token &amp; J/token PPA verdict — king of $/token, honest about energy and area. States its own method (static capacity analysis) and where microarchitecture enters.</p>
+    </a>
+
+    <a class="card" href="trusting-ai-silicon.html">
+      <div class="card-meta">AI-assisted silicon · methodology · new</div>
+      <div class="card-title">When AI touches the RTL <span class="arw">&#8594;</span></div>
+      <div class="card-sub">How you trust AI-generated silicon at production scale — trust the proof, not the diff.</div>
+      <p class="card-desc">A methodology note, not a claim: AI collapses the cost of generating RTL, so at scale the bottleneck moves from writing to trusting. The reframe borrows the discipline silicon already uses for late bugs — the ECO: you don't re-review the netlist, you run equivalence checking. AI edit-freedom should scale inversely with design maturity (generate freely early, ECO-only late), and late edits must be ECO-implementable and gated by a characterized-delta equivalence proof — so a thousand-line diff can't sneak through. Honest survey of the field (ChipNeMo, RTLFixer, formal-in-the-loop repair, agentic-EDA benchmarking) and where the gap is.</p>
     </a>
 
     <a class="card" href="fabric.html">
