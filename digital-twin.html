@@ -44,7 +44,7 @@
 <article class="wrap">
   <header class="post">
     <h1>The digital twin, finally affordable</h1>
-    <p class="dek">The methodology that avoids silicon re-spins always worked. It was just too expensive to always build. That is the thing AI coding agents actually change — and it reorders the economics of a chip program.</p>
+    <p class="dek">The methodology that avoids silicon re-spins always worked. It was just too expensive to always build. That is the thing AI coding agents actually change — and it reorders the economics of a chip program. The same two-level twin buys a second payoff: a fast high-level model finds the design that bends instead of breaks past P99 — reliability with no added area, and roughly 2&times; capacity.</p>
     <div class="meta">Silicon methodology &middot; verification economics &middot; AI-assisted design</div>
   </header>
   <div class="nav">
@@ -84,6 +84,16 @@
   <p>That single-objective nature is why it is <strong>perfectly fine for AI to write the twin</strong> &mdash; and to write it with a free hand. There is no timing to close, no floorplan to disturb, no synthesizable subset to respect, so the agent can use whatever abstraction is clearest and be given full generative freedom. In the language of the <a href="trusting-ai-silicon.html">maturity-staged discipline</a>, the twin sits at the &ldquo;generate freely&rdquo; end of the curve, not the ECO-constrained end: the two things that make late RTL dangerous to hand an agent &mdash; coupled objectives you must protect, and no independent check &mdash; are <em>both absent</em> here. The twin has one objective and it carries its own cheap oracle: directed tests against the spec, and a differential test against the RTL.</p>
 
   <p>The one discipline that does survive is <strong>independence</strong>. A reference is only golden if its mistakes are <em>uncorrelated</em> with the RTL&rsquo;s. Same spec is fine &mdash; the spec is the golden &mdash; but if one agent, one prompt, one misreading of an ambiguous line produces <em>both</em> the model and the RTL, they will agree with each other and be confidently wrong together, a silent false pass. So the twin is derived independently &mdash; a different prompt, seed, or engineer &mdash; and the written spec, owned by a human, stays the true reference both are validated against. Its functionality-only nature is a gift here too: a model you only have to reason about for <em>behavior</em> is far easier for a human to review than timing-critical RTL.</p>
+
+  <h2>Two levels, two payoffs</h2>
+
+  <p>The twin is really two models, and they buy two different things &mdash; which is why a second thesis belongs here rather than in its own silo.</p>
+
+  <p>The <strong>high-level model</strong> is fast, and that is the whole point. Because a simple Python model runs in milliseconds, you can <strong>Monte-Carlo</strong> it &mdash; thousands of stochastic runs over load and contention that a cycle-accurate simulator, orders of magnitude slower, could never afford. That statistical volume is how you characterize the <em>tail</em> instead of the average, and the tail is where complex chips actually fail: you cannot provision the P100, because it lives in contention on shared compute, not on the datapath, so no reasonable amount of silicon buys it. The move the high-level model reveals is to stop trying &mdash; build graceful degradation, a throttle, into the datapath so the same silicon <strong>bends instead of breaking</strong> past P99. It stays reliable well beyond the point a hard design collapses, with <em>no added area</em>, and the tail headroom you no longer have to provision converts into roughly <strong>2&times; serving capacity</strong>, sold as tiered QoS. The full simulations are in <a href="graceful-degradation.html">bend, don&rsquo;t break</a>; the point here is that <em>you can only find that trade with the high-level model</em> &mdash; the low-level twin is far too slow to explore it.</p>
+
+  <p>The <strong>low-level twin</strong> buys the other payoff. It is too slow for Monte-Carlo, but it is cycle-accurate, so it is the model that pulls firmware and software forward &mdash; the team writes and debugs against it months before silicon exists &mdash; and it is the golden reference that turns first bring-up into <em>confirmation, not discovery.</em> That is the re-spin avoidance the rest of this piece is about.</p>
+
+  <p>So it is one methodology, two levels, two payoffs: <strong>capacity and reliability</strong> from the top, <strong>schedule and re-spin avoidance</strong> from the bottom. Both were historically too expensive to build and keep in sync; AI is what makes standing up <em>both</em> affordable at once &mdash; a statistical high-level explorer and a cycle-accurate low-level golden, each feeding the flow below.</p>
 
   <h2>The flow &mdash; and where trust bottoms out</h2>
 
