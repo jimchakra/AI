@@ -34,8 +34,39 @@ The point is not throughput; it is that C's loss is *detectable and correctable*
 while B's is *silent and compounding*, at the same (near-100%) deadline-hit.
 First-order, illustrative; contention is the same heavy-tailed control-plane term
 used across the study.
+
+WHAT THE DRAFT IS (reframe, matching the article's §05 note): at long context the
+effective draft is not a tiny second model (that attacks WEIGHT bytes, the wrong
+term here) but THE TARGET ITSELF on a content-selected KV subset (TriForce-style)
+— i.e. the study's own KV-selector run at a deeper budget. Consistently, this
+sim's draft is ~30% of the target's cost (t_d=3 vs base_v=10), not ~2%, and it is
+low-jitter because the selected working set fits the guaranteed (SRAM) partition
+while the full-KV verify rides the contended pool. Under that reading, Layer 1's
+KV-trim and this draft emit the SAME token; B is C with the verify deleted.
+p_acc is then not arbitrary — it is a function of the selection budget f
+(read more, propose better): see p_acc_from_budget() below, a stylized proxy off
+the measured Quest budget->Δppl curve. Defaults keep p_acc fixed at 0.75 so the
+published curves are unchanged.
 """
 import random, json, os
+
+# Quest budget -> Δppl% (measured, from the study); stylized mapping to acceptance.
+_QF = [1.000, 0.749, 0.434, 0.229, 0.115]
+_QQ = [0.00,  0.12,  0.97,  4.09,  12.97]
+def p_acc_from_budget(f, alpha0=0.98, beta=0.035):
+    """Stylized proxy: acceptance decays with the draft's quality gap to the target.
+    alpha0 = self-agreement ceiling at full budget; beta sets decay per Δppl%.
+    The SHAPE (deeper trim -> lower acceptance) is the claim, not the constants."""
+    f = max(_QF[-1], min(1.0, f))
+    for i in range(len(_QF) - 1):
+        if _QF[i] >= f >= _QF[i + 1]:
+            t = (_QF[i] - f) / (_QF[i] - _QF[i + 1])
+            dppl = _QQ[i] + t * (_QQ[i + 1] - _QQ[i])
+            break
+    else:
+        dppl = _QQ[-1]
+    import math
+    return alpha0 * math.exp(-beta * dppl)
 
 random.seed(20260810)
 

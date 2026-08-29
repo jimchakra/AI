@@ -51,7 +51,7 @@
 <article class="wrap">
   <header class="post">
     <h1>Block float, rediscovered</h1>
-    <p class="dek">The frontier inference numeric — OCP microscaling, MXFP4 — is <em>block floating point</em>, which comms and DSP silicon have shipped for fifty years. A translation from multi-precision vector datapaths to the DL tensor engine, one FFN tile mapped onto a real MAC, and where the win actually lands.</p>
+    <p class="dek">The frontier inference numeric — OCP microscaling, MXFP4 — is <em>block floating point</em>, which comms and DSP silicon have shipped for fifty years. A translation from multi-precision vector datapaths to the DL tensor engine, one FFN tile mapped onto a real MAC, where the win actually lands — and where the sub-byte unpack happens across CUDA, the tensor core, and Tenstorrent.</p>
     <div class="meta">Compute datapath &amp; numerics · a translation, not a discovery</div>
     <div class="nav"><a href="memory-wall.html">← The array can't keep up</a><a href="study.html">Silicon study</a><a href="kv-selector-spec.html">KV-selector spec</a></div>
   </header>
@@ -226,12 +226,81 @@
 
   <p>Two honest notes keep this from drifting into a marketing multiplier. The block scale costs ~0.25 bit per value and the survivor bitmap costs one bit per <em>position</em> — and that bitmap bit is a floor that <em>grows</em> as a share of the total as sparsity rises, so past roughly 85–90% skipped you drop the bitmap for an index list, or the metadata swamps the savings. And the two levers are not perfectly free of each other: aggressive low precision and aggressive skipping both spend from the same quality budget, so you tune them together, not independently. With those caveats stated, the compound is real and large — roughly <strong>5× on gated weights and ~9× on selected KV versus dense FP16</strong> — and it is the same single idea the whole portfolio turns on: the pins are the bottleneck, so move fewer bytes, in fewer bits, for fewer values.</p>
 
+  <h2>Where the unpack actually happens</h2>
+  <p>All of that — the block-float MAC, the byte budget — quietly assumes the packed bytes have already become the multiplier's inputs. But <em>where</em> that expansion happens is a design choice, and it is exactly the bit-level plumbing the last section waved at. A packed 4-bit weight has to be widened to the MAC's operand width and have its block scale applied, and there are three places to do it. <strong>On the load</strong> — a widening load that reads packed codes and writes expanded values to the register file, so the MAC only ever sees the wide format (the DSP / vector-engine idiom). <strong>At the MAC</strong> — keep the register file packed and widen inside the multiplier, saving register capacity at the cost of a more complex datapath. Or — the path GPUs actually take — <strong>neither</strong>: a software instruction pass sitting <em>between</em> the load and the tensor core.</p>
+
+  <figure>
+    <div class="fig-inner">
+      <svg viewBox="0 0 860 470" role="img" aria-label="Three placements of the sub-byte unpack: a widening load, an expand inside the MAC, and a software ALU pass between load and MAC as GPUs do it.">
+        <defs><marker id="u" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#93a1b0"/></marker></defs>
+        <g font-family="-apple-system,Arial">
+          <text x="85"  y="20" text-anchor="middle" font-size="10.5" fill="#8a929a">MEMORY / TCM</text>
+          <text x="240" y="20" text-anchor="middle" font-size="10.5" fill="#8a929a">LOAD</text>
+          <text x="395" y="20" text-anchor="middle" font-size="10.5" fill="#8a929a">REGISTER FILE</text>
+          <text x="760" y="20" text-anchor="middle" font-size="10.5" fill="#8a929a">MAC / TENSOR CORE</text>
+
+          <!-- Lane A -->
+          <text x="30" y="48" font-size="12.5" font-weight="700" fill="#1f4e79">A · Widening load — the DSP / vector-engine idiom</text>
+          <rect x="30" y="60" width="110" height="42" rx="8" fill="#eef3f8" stroke="#9db3c9"/><text x="85" y="79" text-anchor="middle" font-size="12" font-weight="700" fill="#2f3e50">packed</text><text x="85" y="95" text-anchor="middle" font-size="10.5" fill="#8a929a">8×INT4/word</text>
+          <line x1="140" y1="81" x2="183" y2="81" stroke="#93a1b0" stroke-width="1.6" marker-end="url(#u)"/>
+          <rect x="185" y="60" width="110" height="42" rx="8" fill="#f3ede2" stroke="#c8a97a" stroke-width="1.6"/><text x="240" y="79" text-anchor="middle" font-size="12" font-weight="700" fill="#8a5a1a">LD + expand</text><text x="240" y="95" text-anchor="middle" font-size="10.5" font-weight="700" fill="#8a5a1a">INT4→INT16</text>
+          <line x1="295" y1="81" x2="338" y2="81" stroke="#93a1b0" stroke-width="1.6" marker-end="url(#u)"/>
+          <rect x="340" y="60" width="110" height="42" rx="8" fill="#eef3f8" stroke="#9db3c9"/><text x="395" y="79" text-anchor="middle" font-size="12" font-weight="700" fill="#2f3e50">holds INT16</text><text x="395" y="95" text-anchor="middle" font-size="10.5" fill="#8a929a">wide, ready</text>
+          <line x1="450" y1="81" x2="698" y2="81" stroke="#93a1b0" stroke-width="1.6" marker-end="url(#u)"/>
+          <rect x="700" y="60" width="120" height="42" rx="8" fill="#eef3f8" stroke="#9db3c9"/><text x="760" y="79" text-anchor="middle" font-size="12" font-weight="700" fill="#2f3e50">MAC (INT16)</text><text x="760" y="95" text-anchor="middle" font-size="10.5" fill="#8a929a">clean datapath</text>
+
+          <!-- Lane B -->
+          <text x="30" y="164" font-size="12.5" font-weight="700" fill="#1f4e79">B · Expand at the MAC — keeps the register file packed</text>
+          <rect x="30" y="176" width="110" height="42" rx="8" fill="#eef3f8" stroke="#9db3c9"/><text x="85" y="195" text-anchor="middle" font-size="12" font-weight="700" fill="#2f3e50">packed</text><text x="85" y="211" text-anchor="middle" font-size="10.5" fill="#8a929a">8×INT4/word</text>
+          <line x1="140" y1="197" x2="183" y2="197" stroke="#93a1b0" stroke-width="1.6" marker-end="url(#u)"/>
+          <rect x="185" y="176" width="110" height="42" rx="8" fill="#eef3f8" stroke="#9db3c9"/><text x="240" y="195" text-anchor="middle" font-size="12" font-weight="700" fill="#2f3e50">LD (raw)</text><text x="240" y="211" text-anchor="middle" font-size="10.5" fill="#8a929a">no expand</text>
+          <line x1="295" y1="197" x2="338" y2="197" stroke="#93a1b0" stroke-width="1.6" marker-end="url(#u)"/>
+          <rect x="340" y="176" width="110" height="42" rx="8" fill="#eef3f8" stroke="#9db3c9"/><text x="395" y="195" text-anchor="middle" font-size="12" font-weight="700" fill="#2f3e50">holds INT4</text><text x="395" y="211" text-anchor="middle" font-size="10.5" fill="#8a929a">still packed</text>
+          <line x1="450" y1="197" x2="698" y2="197" stroke="#93a1b0" stroke-width="1.6" marker-end="url(#u)"/>
+          <rect x="700" y="176" width="120" height="42" rx="8" fill="#f3ede2" stroke="#c8a97a" stroke-width="1.6"/><text x="760" y="195" text-anchor="middle" font-size="12" font-weight="700" fill="#8a5a1a">MAC + expand</text><text x="760" y="211" text-anchor="middle" font-size="10.5" font-weight="700" fill="#8a5a1a">widen inside</text>
+
+          <!-- Lane C -->
+          <text x="30" y="280" font-size="12.5" font-weight="700" fill="#1f4e79">C · What NVIDIA GPUs actually do — a software pass in between</text>
+          <rect x="30" y="292" width="110" height="42" rx="8" fill="#eef3f8" stroke="#9db3c9"/><text x="85" y="311" text-anchor="middle" font-size="12" font-weight="700" fill="#2f3e50">packed</text><text x="85" y="327" text-anchor="middle" font-size="10.5" fill="#8a929a">8×INT4/word</text>
+          <line x1="140" y1="313" x2="183" y2="313" stroke="#93a1b0" stroke-width="1.6" marker-end="url(#u)"/>
+          <rect x="185" y="292" width="110" height="42" rx="8" fill="#eef3f8" stroke="#9db3c9"/><text x="240" y="311" text-anchor="middle" font-size="12" font-weight="700" fill="#2f3e50">LD (raw)</text><text x="240" y="327" text-anchor="middle" font-size="10.5" fill="#8a929a">byte-agnostic</text>
+          <line x1="295" y1="313" x2="338" y2="313" stroke="#93a1b0" stroke-width="1.6" marker-end="url(#u)"/>
+          <rect x="340" y="292" width="110" height="42" rx="8" fill="#eef3f8" stroke="#9db3c9"/><text x="395" y="311" text-anchor="middle" font-size="12" font-weight="700" fill="#2f3e50">packed word</text><text x="395" y="327" text-anchor="middle" font-size="10.5" fill="#8a929a">unexpanded</text>
+          <line x1="450" y1="313" x2="493" y2="313" stroke="#93a1b0" stroke-width="1.6" marker-end="url(#u)"/>
+          <rect x="495" y="290" width="150" height="46" rx="8" fill="#f3ede2" stroke="#c8a97a" stroke-width="1.8"/><text x="570" y="308" text-anchor="middle" font-size="12" font-weight="700" fill="#8a5a1a">ALU expand pass</text><text x="570" y="325" text-anchor="middle" font-size="10" font-weight="700" fill="#8a5a1a">lop3 / prmt + hfma2</text>
+          <line x1="645" y1="313" x2="698" y2="313" stroke="#93a1b0" stroke-width="1.6" marker-end="url(#u)"/>
+          <rect x="700" y="292" width="120" height="42" rx="8" fill="#eef3f8" stroke="#9db3c9"/><text x="760" y="311" text-anchor="middle" font-size="12" font-weight="700" fill="#2f3e50">Tensor core</text><text x="760" y="327" text-anchor="middle" font-size="10.5" fill="#8a929a">MMA (FP16)</text>
+
+          <line x1="30" y1="378" x2="830" y2="378" stroke="#e2e5e8"/>
+          <text x="30" y="404" font-size="11.5" fill="#6a757f">The amber stage is where INT4 becomes the MAC's input. GPUs put it in the gap (C) — an extra instruction pass and register</text>
+          <text x="30" y="422" font-size="11.5" fill="#6a757f">pressure a widening load (A) removes. Blackwell moved MX decode toward B, inside the tensor core; a vector engine would prefer A.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>Three placements of the sub-byte unpack. The DSP idiom (A) folds it into the load; GPUs (C) leave it as a software <code>lop3</code>/<code>prmt</code>+<code>hfma2</code> pass between load and MAC. Same arithmetic, very different cost.</figcaption>
+  </figure>
+
+  <p>That third option is the overhead a specialized decode removes. On an NVIDIA GPU there is no widening INT4 load and — for the weight-only case that dominates deployed LLMs — no INT4×FP16 tensor op, so a quantized kernel loads the packed word unexpanded, then runs an explicit register-file pass (<code>lop3</code>/<code>prmt</code>/<code>shr</code>+<code>and</code> to unpack, <code>hfma2</code> to apply the scale) before feeding <code>mma.sync</code>. It is a hand-tuned sequence every serious INT4 kernel re-writes, spending issue slots and registers a widening load would not. The direction of travel is telling: Blackwell finally moved MX decode <em>into</em> the tensor core, and the non-GPU parts went further still.</p>
+
+  <table>
+    <tr><th>Platform</th><th>Where the unpack happens</th><th>Formats decoded in HW</th><th>Fixed-function?</th><th>Limitation</th></tr>
+    <tr><td><strong>CUDA cores</strong> (SM)</td><td>software pass in the register file, between load and MMA</td><td>any — programmable</td><td>No</td><td>spends issue slots + registers; re-hand-tuned per kernel</td></tr>
+    <tr><td><strong>Tensor core</strong> (Blackwell)</td><td>inside the MMA datapath (micro-scaling)</td><td>MX-FP4 / FP6 / FP8, NVFP4</td><td>Yes, per format</td><td>format-locked; deployed INT4 GPTQ/AWQ still runs the software path</td></tr>
+    <tr><td><strong>Tenstorrent</strong> (Tensix)</td><td>packer / unpacker at the SRAM↔compute boundary</td><td>block float BFP8/4/2 + FP16/BF16/FP8</td><td>Yes</td><td>block-float family; uniform-within-block, fixed granularity</td></tr>
+  </table>
+
+  <p>Read the table on one axis and the story is not speed — vendor internals are proprietary — it is <strong>generality</strong>. The CUDA cores decode any format, but in software. The tensor core and Tenstorrent's packer/unpacker decode in hardware, but each for <em>one format family</em>. Nobody ships a hardware decoder that is format-<em>agnostic</em> — which is exactly the slot a fixed-point radio engineer would recognize.</p>
+
+  <p>In a modem, the datapath commits to a container — 8, 12, 16 bits — but what those bits <em>mean</em> (the Q-point, the scale, signed/saturating) is a parameter chosen offline by simulation and programmed into the vector unit, not baked into gates. Generalize the decode engine the same way: fix the container (an N-bit code widening to a common compute format) and a parametric family — <em>piecewise-linear</em>, a segment-select plus a per-segment affine map — and take the representation as loaded parameters. One such engine covers uniform integer at any width (one segment), group-wise affine, non-uniform piecewise-linear quantization (several segments), and approximates FP or LUT formats with enough segments. Where the parameters come from — an offline calibration table for weights, a runtime block scale for KV — the hardware does not care.</p>
+
+  <div class="kick">The point is the DSP one, stated for AI: the format is <em>data, not gates</em>. Freeze the width and a piecewise-linear primitive in silicon; let the scheme be a parameter table. Then the next quant format that ships is a new table, not a new chip — the honest answer to a decode engine's one real risk, that formats churn faster than silicon. It is the same shared-exponent, program-the-scale craft as the rest of this page, moved from the multiply to the unpack. <em>(Reasoning and a design sketch — not a benchmark.)</em></div>
+
   <h2>The one genuinely new thing — and how to hold it</h2>
   <p>What a vector engine or a channel decoder does <em>not</em> teach you is the specific craft of the large, regular GEMM array: choosing weight-stationary versus output-stationary versus row-stationary dataflow, and tiling a matmul so the array stays fed. But even that follows the prefill/decode split rather than sitting apart from it. Prefill is a big square GEMM — reuse is high, so a weight- or output-stationary array amortizes operand fetch and the systolic structure pays off. Decode is a tall-skinny GEMV — there is no weight reuse at batch one, the array runs at single-digit utilization, and the right answer is not a bigger array but a smaller datapath fed by more bandwidth, which is the decode-specialized-silicon argument from the <a href="system-capacity.html">system model</a>. So the dataflow decision is not a separate discipline to acquire; it is the same operating-point reasoning applied one level down, at the array instead of the chip.</p>
 
   <p>The honest summary, then, is not "learn compute datapath." It is that multi-precision arithmetic silicon — mixed-format MACs, wide accumulation, block-shared scaling, requantization under a power budget — is a craft comms and graphics have practiced for decades, and the DL frontier has walked back into it. The block-float lineage is not a gap to cover. On the numeric the field is currently most excited about, it is a head start.</p>
 
-  <p class="src"><strong>Sources:</strong> OCP Microscaling (MX) Formats Specification v1.0; NVIDIA/Arm/Intel MX joint paper (2023); FP8 formats (Micikevicius et al., 2022). Block floating point: standard DSP/FFT and fixed-point receiver practice. MAC and off-package movement energy per the <a href="study.html">energy model</a>.</p>
+  <p class="src"><strong>Sources:</strong> OCP Microscaling (MX) Formats Specification v1.0; NVIDIA/Arm/Intel MX joint paper (2023); FP8 formats (Micikevicius et al., 2022). Block floating point: standard DSP/FFT and fixed-point receiver practice. MAC and off-package movement energy per the <a href="study.html">energy model</a>. Sub-byte decode: CUDA <code>lop3</code>/<code>prmt</code> fast-dequant kernels (Marlin, TensorRT-LLM); Blackwell MX in the 2nd-gen Transformer Engine; Tenstorrent Tensix packer/unpacker. Piecewise-linear quantization: PWLQ (Fang et al., ECCV 2020) and classical A-law/μ-law companding. The decode-engine generalization is reasoning and a design sketch, not a measured result.</p>
 
   <div class="bio">A companion to <a href="memory-wall.html">The array can't keep up</a> and the <a href="study.html">silicon study</a>. I work at the intersection of real-time systems and heterogeneous silicon — GPU arithmetic datapaths, SIMD/VLIW vector engines, and multi-precision decoders shipped to silicon — now applied to AI inference at the memory boundary.</div>
 </article>

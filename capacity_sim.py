@@ -42,7 +42,7 @@ is on total latency (queue wait + service).
 Quality axis is the real measured Quest curve (Qwen2.5-1.5B) — read_fraction -> Δppl%.
 Absolute times are calibrated; the SHAPES are the claim.
 """
-import random, json, os, bisect
+import random, json, os
 
 random.seed(20260810)
 
@@ -77,23 +77,28 @@ def simulate(lam, policy, N=120000, D=50.0, c=3.0, k0=7.0, sigma=0.7, warm=2000)
         else:  # B: anytime truncate at deadline
             budget = D - W
             if budget <= c:
-                f = 0.0; svc = c            # can't fit mandatory compute -> miss
+                # Can't even fit the mandatory compute -> a true miss. The request
+                # still OCCUPIES the server for c: shedding hopeless requests is
+                # deliberately NOT modeled here -- that is Layer 2's (admission
+                # control's) job, kept separate so each layer's effect is clean.
+                f = 0.0; svc = c
             else:
                 f = min(1.0, (budget - c) / (k0 * M))
                 svc = c + f * k0 * M
-            if f < 0.999: deg += 1
-            qsum += qcost(f)
         dep = start + svc
         lat = dep - t
         dep_prev = dep
-        if i < warm:  # discard warmup
+        if i < warm:  # discard warmup (applies to ALL counters, consistently)
             continue
+        if policy == 'B':
+            if f < 0.999: deg += 1
+            qsum += qcost(f)
         if lat <= D + 1e-9:
             ontime += 1
         if policy == 'A':
             lat_tail.append(lat)
     n = N - warm
-    out = dict(lam=lam, ontime=ontime / n, degraded=deg / N, mean_q=qsum / N)
+    out = dict(lam=lam, ontime=ontime / n, degraded=deg / n, mean_q=qsum / n)
     if lat_tail:
         lat_tail.sort()
         out['p99'] = lat_tail[int(0.99 * len(lat_tail))]
@@ -133,20 +138,20 @@ def simulate_tiers(lam, prem_frac, N=120000, D=50.0, c=3.0, k0=7.0,
             arr.append((t, 'P', lognorm_contention(sigma_prem)))
         else:
             arr.append((t, 'E', lognorm_contention(sigma)))
-    # non-preemptive priority queue simulation
+    # Non-preemptive priority queue: a premium job can wait behind ONE in-service
+    # economy job (head-of-line blocking). That is realistic for a non-preemptive
+    # server and makes the premium-holds result conservative, not optimistic.
     busy_until = 0.0
     # process in arrival order but when server frees, pick highest-priority waiting job.
     # simpler: event loop over arrivals with a waiting pool
     pool = []  # waiting (premium first). store (prio, seq, arrtime, M, cls)
     seq = 0
     pmet = pe = 0; pn = en = 0; edeg = 0; eq = 0.0
-    idx = 0; now = 0.0
     # We simulate by advancing through arrivals and draining when server is free.
     events = sorted(arr, key=lambda x: x[0])
     ei = 0
     server_free = 0.0
     # discrete: we push arrivals into pool at their time, and serve greedily
-    import collections
     while ei < len(events) or pool:
         if pool and (ei >= len(events) or server_free <= events[ei][0]):
             # serve next (premium prio 0 before economy prio 1), FIFO within class

@@ -160,11 +160,11 @@
  <p class="cvcap">Priority + guaranteed resources for premium (30% of load), degrade-first economy (70%), one shared server. <span style="color:#2e7d5b">Premium on-time (green)</span> stays pinned near 100% even past nominal capacity; <span style="color:#8a5a1a">economy on-time (amber)</span> and <span style="color:#b0392f">economy degraded-fraction (red dashed)</span> carry the load.</p>
  <table>
    <tr><th>Offered load</th><th>Premium on-time</th><th>Economy on-time</th><th>Economy degraded</th><th>Economy Δppl</th></tr>
-   <tr><td>60 req/s</td><td><span class=ok>99.9%</span></td><td>98.1%</td><td>4.4%</td><td>0.65</td></tr>
-   <tr><td>90 req/s</td><td><span class=ok>99.8%</span></td><td>88.1%</td><td>20.3%</td><td>3.90</td></tr>
-   <tr><td>110 req/s</td><td><span class=ok>99.9%</span></td><td>75.1%</td><td>37.0%</td><td>8.01</td></tr>
-   <tr><td>130 req/s</td><td><span class=ok>99.7%</span></td><td>58.7%</td><td>54.9%</td><td>13.04</td></tr>
-   <tr><td>150 req/s</td><td><span class=ok>99.4%</span></td><td>40.4%</td><td>71.5%</td><td>18.47</td></tr>
+   <tr><td>60 req/s</td><td><span class=ok>99.9%</span></td><td>98.1%</td><td>4.4%</td><td>0.66</td></tr>
+   <tr><td>90 req/s</td><td><span class=ok>99.9%</span></td><td>88.7%</td><td>19.3%</td><td>3.70</td></tr>
+   <tr><td>110 req/s</td><td><span class=ok>99.7%</span></td><td>75.2%</td><td>36.7%</td><td>7.96</td></tr>
+   <tr><td>130 req/s</td><td><span class=ok>99.8%</span></td><td>58.5%</td><td>54.9%</td><td>13.05</td></tr>
+   <tr><td>150 req/s</td><td><span class=ok>99.4%</span></td><td>40.3%</td><td>71.9%</td><td>18.53</td></tr>
  </table>
  <div class="note"><strong>Read the columns as a price sheet.</strong> The premium column is flat &mdash; that tier is sold on a hard guarantee and the silicon delivers it regardless of fleet load, because priority protects its queue wait and guaranteed resources bound its service tail. The economy columns are the give: as the fleet fills, economy requests are served on time by reading less (degraded &Delta;ppl rising), and only once the server is truly saturated does economy start missing outright. A provider prices the two tiers off exactly these curves. Reproduce: <code>capacity_sim.py</code>.</div>
 
@@ -207,7 +207,60 @@
      <div class="stat good"><div class="v" id="spec_ce">–</div><div class="k">speculative left uncorrected</div></div>
    </div>
  </div>
- <div class="note"><strong>This is the property that makes the throttle self-correcting.</strong> KV-trim and the speculative throttle both hold the deadline at ~100%, so on a latency chart they look identical &mdash; the difference is only visible on the <em>error</em> axis. KV-trim spends quality it can never account for; speculative decoding spends only a <em>deferred</em> verification that it always settles, so the loss is detectable and correctable, bounded by the backlog window rather than smeared across the whole stream. The price of that guarantee is real: a second (draft) model to run, and during a sustained burst a larger slice of the output is <em>transiently</em> unverified. Honest bound &mdash; in a streaming setting you cannot literally un-emit a token, so &ldquo;correct&rdquo; means the trajectory is fixed <em>forward</em> the moment the deferred verify rejects; the error is contained to the backlog window, not silently propagated. Reproduce: <code>spec_deadline_sim.py</code>.</div>
+ <div class="note"><strong>This is the property that makes the throttle self-correcting.</strong> KV-trim and the speculative throttle both hold the deadline at ~100%, so on a latency chart they look identical &mdash; the difference is only visible on the <em>error</em> axis. KV-trim spends quality it can never account for; speculative decoding spends only a <em>deferred</em> verification that it always settles, so the loss is detectable and correctable, bounded by the backlog window rather than smeared across the whole stream. The price of that guarantee is real: a draft to run (a second model &mdash; or the self-draft variant below, which trades that away), and during a sustained burst a larger slice of the output is <em>transiently</em> unverified. Honest bound &mdash; in a streaming setting you cannot literally un-emit a token, so &ldquo;correct&rdquo; means the trajectory is fixed <em>forward</em> the moment the deferred verify rejects; the error is contained to the backlog window, not silently propagated. Reproduce: <code>spec_deadline_sim.py</code>.</div>
+
+ <h3>What is the draft, exactly? — the selector <em>is</em> the draft engine</h3>
+ <p>Classically the draft is a genuinely <em>small</em> second model &mdash; a ~1B beside a ~70B, cheap because it streams ~1&#8260;70th of the weight bytes. That is the right draft when <strong>weights</strong> dominate. But this page lives at long context, where the target&rsquo;s cost <em>is the KV read</em> &mdash; and there the tiny model stops being the answer: it either cannot see the long context (and its acceptance collapses on exactly the tokens that depend on it) or it keeps its own full-context KV and stops being cheap. The long-context draft that works (TriForce is the published version) is <strong>the target model itself, reading a selected subset of its own KV</strong> &mdash; the same content-aware selection this study builds, run at a deeper budget than Layer&nbsp;1&rsquo;s trims.</p>
+ <p>Look at what that means for the two throttles above. Layer&nbsp;1&rsquo;s KV-trim token and the selected-KV draft token are <em>the same token</em> &mdash; the target under a reduced budget. The entire difference is what happens next: KV-trim ships it and never looks back; the speculative throttle treats it as a <em>proposal</em> and schedules the full-KV pass as the deferred check. <strong>KV-trim is speculation with the verify deleted.</strong> One selector, one silicon path, two trust levels &mdash; and the draft&rsquo;s acceptance rate stops being an arbitrary constant: it is a function of the selection budget, read off the same measured Quest curve as everything else (keep more, propose better, get accepted more).</p>
+ <div class="note"><strong>The honest cost comparison, and the closure with &sect;4&rsquo;s partitioning.</strong> A selected-KV draft is <em>not</em> small the way a 1B draft is small &mdash; think ~20&ndash;30% of the target&rsquo;s per-token cost, not ~2%. It earns that back on the other axis: acceptance. Speculation amortizes one full verify over the accepted run, so what matters is <em>cost &divide; acceptance</em> &mdash; a 2%-cost draft accepted ~70% of the time and a ~30%-cost draft accepted ~95%+ of the time land in the same net ballpark, and the selected-KV draft&rsquo;s acceptance is <em>tunable</em> by the budget knob. It also deletes the second-model tax (same weights, nothing extra resident) &mdash; and it closes the loop with the partitioning argument: the selected working set is small enough to live on the <em>guaranteed</em> resources (SRAM-resident, no contention), which is exactly why the draft can be low-jitter while the full-KV verify carries the contention tail. The selector is what makes the draft fit the deterministic partition.</div>
+
+ <h3 style="margin-top:34px">The draft-economics plane &mdash; why an expensive draft can be the right draft</h3>
+ <p>The speedup of a speculative scheme is set by two numbers &mdash; the draft&rsquo;s <em>cost</em> c (as a fraction of one target pass) and its <em>acceptance rate</em> a &mdash; through an exact formula (amortize one verify over the accepted run, block length chosen optimally). Plot its iso-speedup contours and place the draft families on the plane, and the size question answers itself: a tiny model is a <em>cheap</em> draft; a selected-KV draft is an <em>accepted</em> draft. At short context the tiny draft&rsquo;s corner wins. At long context its acceptance collapses (it cannot see the context that decides the token) and it falls off the ridge &mdash; while the selected-KV drafts sit <em>along</em> the ridge, and cut correction traffic (1&minus;a), hence the unverified backlog, by ~3&times; besides.</p>
+ <figure style="margin:18px 0">
+ <svg viewBox="0 0 940 500" role="img" aria-label="Iso-speedup contours of speculative decoding on the draft cost versus acceptance plane, with tiny-model drafts and selected-KV drafts marked.">
+  <g font-family="-apple-system,Arial">
+  <line x1="90" y1="430" x2="900" y2="430" stroke="#93a1b0" stroke-width="1.2"/>
+  <line x1="90" y1="40" x2="90" y2="430" stroke="#93a1b0" stroke-width="1.2"/>
+  <path d="M135,430 L142,422 L148,414 L154,407 L160,400 L168,391 L175,384 L182,377 L189,369 L196,362 L203,355 L210,348 L217,341 L224,334 L232,327 L239,320 L247,312 L254,305 L262,298 L269,291 L277,284 L285,277 L293,270 L301,263 L308,256 L316,249 L323,243 L332,236 L341,229 L349,223 L357,216 L367,209 L375,203 L383,197 L393,190 L401,184 L411,177 L419,171 L429,165 L438,159 L447,152 L456,146 L466,140 L475,134 L486,127 L494,122 L504,116 L515,109 L525,104 L535,99 L546,93 L557,88 L568,83 L579,77 L591,72 L604,67 L615,62 L628,58 L641,53 L656,49 L669,45 L684,42" fill="none" stroke="#c9d8cf" stroke-width="1.6"/>
+  <path d="M90,369 L95,361 L100,352 L105,344 L110,336 L116,327 L121,320 L127,311 L133,304 L138,296 L145,288 L151,280 L157,273 L164,266 L171,258 L178,250 L185,243 L192,236 L199,229 L206,222 L213,215 L221,207 L228,200 L236,193 L244,186 L252,179 L260,172 L268,166 L276,159 L285,152 L293,146 L302,140 L312,133 L321,127 L330,121 L340,115 L349,109 L359,102 L369,97 L379,92 L390,86 L401,80 L412,75 L423,70 L436,65 L449,60 L460,56 L475,51 L489,47 L503,44 L519,40" fill="none" stroke="#9dbfab" stroke-width="1.6"/>
+  <path d="M90,296 L94,288 L99,279 L104,270 L109,263 L115,254 L120,247 L126,238 L132,231 L138,223 L145,215 L151,207 L157,200 L164,193 L171,185 L179,177 L186,170 L194,163 L201,156 L208,150 L216,143 L224,136 L233,129 L242,123 L250,117 L260,110 L268,104 L279,97 L288,92 L297,86 L308,80 L319,75 L330,69 L342,64 L353,60 L367,54 L378,51 L393,46 L408,42" fill="none" stroke="#6fa286" stroke-width="1.6"/>
+  <path d="M90,247 L94,239 L99,231 L104,222 L109,215 L115,206 L120,198 L127,190 L132,182 L138,175 L145,167 L152,159 L159,152 L166,145 L174,138 L182,131 L190,124 L197,118 L205,111 L215,104 L223,98 L233,92 L242,86 L253,79 L263,74 L273,68 L284,63 L297,58 L308,53 L321,49 L334,45 L349,41" fill="none" stroke="#43856a" stroke-width="1.6"/>
+  <text x="560" y="318" font-size="11" fill="#43856a" font-weight="700">1.5×</text>
+  <text x="520" y="232" font-size="11" fill="#43856a" font-weight="700">2.0×</text>
+  <text x="420" y="180" font-size="11" fill="#43856a" font-weight="700">2.5×</text>
+  <text x="180" y="118" font-size="11" fill="#43856a" font-weight="700">3.0×</text>
+  <!-- axis ticks -->
+  <text x="90" y="450" font-size="10.5" fill="#8a929a" text-anchor="middle">0</text>
+  <text x="295" y="450" font-size="10.5" fill="#8a929a" text-anchor="middle">0.2</text>
+  <text x="500" y="450" font-size="10.5" fill="#8a929a" text-anchor="middle">0.4</text>
+  <text x="705" y="450" font-size="10.5" fill="#8a929a" text-anchor="middle">0.6</text>
+  <text x="900" y="450" font-size="10.5" fill="#8a929a" text-anchor="middle">0.8</text>
+  <text x="80" y="434" font-size="10.5" fill="#8a929a" text-anchor="end">0.45</text>
+  <text x="80" y="255" font-size="10.5" fill="#8a929a" text-anchor="end">0.75</text>
+  <text x="80" y="44" font-size="10.5" fill="#8a929a" text-anchor="end">0.99</text>
+  <text x="495" y="478" font-size="12" fill="#6a757f" text-anchor="middle">draft cost c (fraction of one target pass)</text>
+  <text x="30" y="235" font-size="12" fill="#6a757f" text-anchor="middle" transform="rotate(-90 30 235)">acceptance rate a</text>
+  <!-- points -->
+  <circle cx="111" cy="213" r="7" fill="#8a5a1a"/>
+  <text x="124" y="205" font-size="11.5" fill="#8a5a1a" font-weight="700">tiny draft &middot; short ctx (2.98&times;)</text>
+  <text x="124" y="219" font-size="10" fill="#8a5a1a">its home regime &mdash; nothing to fix</text>
+  <g stroke="#a4443a" stroke-width="2.4"><line x1="155" y1="351" x2="169" y2="365"/><line x1="169" y1="351" x2="155" y2="365"/></g>
+  <text x="180" y="356" font-size="11.5" fill="#a4443a" font-weight="700">tiny draft &middot; long ctx (1.63&times;)</text>
+  <text x="180" y="370" font-size="10" fill="#a4443a">context-blind: acceptance collapses</text>
+  <path d="M295,134 L302,148 L288,148 Z" fill="#2e7d5b"/>
+  <text x="308" y="140" font-size="11.5" fill="#2e7d5b" font-weight="700">KV-draft f=23% (2.02&times;)</text>
+  <text x="308" y="154" font-size="10" fill="#2e7d5b">corrections/token 0.15 vs 0.45</text>
+  <rect x="437" y="65" width="12" height="12" fill="#2e7d5b"/>
+  <text x="456" y="75" font-size="11.5" fill="#2e7d5b" font-weight="700">KV-draft f=43% (1.92&times;)</text>
+  <rect x="662" y="44" width="12" height="12" fill="#2e7d5b" transform="rotate(45 668 50)"/>
+  <text x="682" y="55" font-size="11.5" fill="#2e7d5b" font-weight="700">KV-draft f=75% (1.47&times;)</text>
+  <text x="682" y="69" font-size="10" fill="#2e7d5b">Layer-1-grade trim: verify almost always agrees</text>
+  </g>
+ </svg>
+ <figcaption style="font-family:-apple-system,Arial;font-size:12.5px;color:#6a757a;text-align:center;font-style:italic;margin-top:8px">Iso-speedup contours of speculative decoding on the (cost, acceptance) plane. The formula is exact; the five operating points are stated assumptions (tiny-draft acceptance from published ranges; KV-draft acceptance a stylized proxy off the measured Quest curve). Reproduce: <code style="font-style:normal">draft_economics_sim.py</code>.</figcaption>
+ </figure>
+
+ <div class="note"><strong>Scope of the bound &mdash; transient vs sustained.</strong> The drain-to-zero property holds for a <em>transient</em> burst: backlog depth is set by the unverified-emission rate times the time until verification throughput recovers. In a <em>sustained</em> overload the backlog (and the <em>age</em> of its oldest unverified token &mdash; which is what an autoregressive error&rsquo;s repair cost grows with) would grow without bound; the honest design caps it with a threshold that hands off to the next rung of the &sect;4 throttle ladder &mdash; trim the <em>verify&rsquo;s</em> KV budget to force check throughput back above emission rate, and past that, shed at admission. The speculative throttle absorbs the tail; the cascade bounds the speculative throttle.</div>
 
  <h2><span class="n">06</span>Where this sits in the literature</h2>
  <p class="lead">The idea is not new to computing &mdash; it is just scattered across three communities that rarely cite each other, and none of them frames the trigger the way a real-time-systems engineer does (a contention-induced deadline miss on shared compute) <em>and</em> ties the graceful lever to a near-memory KV datapath. That intersection is the open space.</p>
