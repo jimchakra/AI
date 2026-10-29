@@ -1,183 +1,414 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Inference Architecture — Essays</title>
-<meta name="description" content="Essays on heterogeneous silicon, real-time systems, and compute at the memory boundary — from RAN to AI inference.">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Inference Architecture · Essays &amp; Silicon Studies</title>
+<meta name="description" content="Jim Chou — essays, working code, and silicon results on AI inference at the memory boundary: data movement, graceful degradation, block-float numerics, the fabric, and the digital-twin methodology.">
 <style>
-  :root{ --navy:#2f3e50; --body:#2c3238; --muted:#6a727a; --faint:#8a929a; --rule:#e6e9ec; --page:#ffffff; }
-  *{box-sizing:border-box}
-  html{-webkit-text-size-adjust:100%}
-  body{margin:0;background:var(--page);color:var(--body);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    line-height:1.6;font-size:16.5px;letter-spacing:.002em}
-  .wrap{max-width:684px;margin:0 auto;padding:72px 24px 96px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;
+  background:#f4f6f9;color:#111;line-height:1.6}
 
-  .eyebrow{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:1.4px;margin:0 0 14px}
-  h1{font-size:31px;line-height:1.16;letter-spacing:-.5px;color:var(--navy);margin:0 0 14px;font-weight:700}
-  .lede{font-size:17px;color:#586470;line-height:1.5;margin:0 0 4px;font-weight:400}
-  .rule{height:1px;background:var(--rule);border:0;margin:34px 0 30px}
+.hdr{background:#1e3a5f;border-top:4px solid #C05E00;padding:28px 32px 24px}
+.hdr h1{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.3px}
+.hdr p{font-size:13px;color:rgba(255,255,255,.65);margin-top:6px}
+.badge{display:inline-block;background:rgba(255,255,255,.15);color:#fff;
+  font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  padding:3px 10px;border-radius:3px;margin-top:10px}
+.hdr .sister{margin-top:10px;font-size:12px;color:rgba(255,255,255,.65)}
+.hdr .sister a{color:#fff;opacity:.8;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.35)}
 
-  .list{display:flex;flex-direction:column;gap:18px}
-  .sec{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:1.4px;margin:36px 0 14px;font-weight:600}
-  a.card{display:block;text-decoration:none;color:inherit;border:1px solid var(--rule);border-radius:12px;
-    padding:22px 24px;background:#fff;transition:border-color .15s ease, box-shadow .15s ease, transform .15s ease}
-  a.card:hover{border-color:#c3ccd4;box-shadow:0 4px 18px rgba(31,41,51,.08);transform:translateY(-1px)}
-  .card-meta{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:9px}
-  .card-title{font-size:21px;font-weight:700;color:var(--navy);letter-spacing:-.3px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
-  .arw{font-size:17px;color:#9aa6b0;transition:transform .15s ease, color .15s ease}
-  a.card:hover .arw{transform:translateX(3px);color:var(--navy)}
-  .card-sub{font-size:15px;color:#48525c;font-style:italic;margin:0 0 10px;line-height:1.4}
-  .card-desc{font-size:14.5px;color:var(--muted);margin:0;line-height:1.6}
+.main{max-width:1000px;margin:0 auto;padding:36px 24px 60px}
 
-  .card.soon{background:#f7f9fa;border-style:dashed;cursor:default}
-  .card.soon .card-title{color:#5b6874}
-  .card.soon .card-desc{color:var(--faint)}
+.intro{font-size:14px;color:#333;line-height:1.8;margin-bottom:18px;max-width:760px}
+.path{font-size:13px;color:#333;line-height:1.8;margin-bottom:32px;max-width:760px;
+  background:#fff;border:1px solid #d0d8e4;border-radius:8px;padding:14px 18px}
+.path b{color:#1e3a5f}
+.path a{color:#2C5282;text-decoration:none;font-weight:600}
+.path a:hover{text-decoration:underline}
 
-  .foot{margin-top:44px;padding-top:22px;border-top:1px solid var(--rule);font-size:14px;color:var(--muted);line-height:1.7}
-  .foot .lbl{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--faint);display:block;margin-bottom:6px}
-  .foot a{color:var(--navy);text-decoration:none;border-bottom:1px solid #cbd4dc}
-  .foot a:hover{border-bottom-color:var(--navy)}
-  .path{border:1px solid var(--rule);border-radius:12px;padding:16px 20px 14px;background:#fbfcfd;margin:26px 0 4px}
-  .path-lbl{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--faint);font-weight:600;margin-bottom:9px}
-  .path ol{margin:0;padding-left:20px}
-  .path li{font-size:14px;color:var(--muted);margin:6px 0;line-height:1.5}
-  .path a{color:var(--navy);font-weight:600;text-decoration:none;border-bottom:1px solid #cbd4dc}
-  .path a:hover{border-bottom-color:var(--navy)}
-  @media(max-width:640px){ body{font-size:16px} h1{font-size:26px} .wrap{padding:48px 18px 72px} a.card{padding:18px 18px} }
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:640px){.grid{grid-template-columns:1fr}}
+
+.card{background:#fff;border:1px solid #d0d8e4;border-radius:8px;
+  overflow:hidden;text-decoration:none;display:block;
+  transition:box-shadow .15s,transform .15s}
+.card:hover{box-shadow:0 4px 20px rgba(30,58,95,.12);transform:translateY(-2px)}
+
+.card-stripe{height:4px}
+.card-body{padding:20px 22px 18px}
+.card-tag{font-size:9px;font-weight:700;color:#2C5282;text-transform:uppercase;
+  letter-spacing:.1em;margin-bottom:8px}
+.card-title{font-size:16px;font-weight:800;color:#111;margin-bottom:8px;line-height:1.3}
+.card-desc{font-size:12.5px;color:#444;line-height:1.7;margin-bottom:14px}
+.card-tabs{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:16px}
+.tab-chip{background:#f0f4ff;color:#2C5282;font-size:10px;font-weight:600;
+  padding:2px 8px;border-radius:3px}
+.card-link{display:inline-block;background:#1e3a5f;color:#fff;font-size:12px;
+  font-weight:600;padding:7px 16px;border-radius:4px;text-decoration:none}
+.card-link:hover{background:#2C5282}
+
+.core-badge{background:#1a5c35;color:#fff;font-size:9px;font-weight:700;
+  padding:2px 7px;border-radius:3px;margin-left:8px;vertical-align:middle;
+  text-transform:uppercase;letter-spacing:.06em}
+
+.footer{text-align:center;font-size:12px;color:#888;padding:24px;
+  border-top:1px solid #e0e6f0;margin-top:40px}
+.footer a{color:#2C5282;text-decoration:none}
 </style>
 </head>
 <body>
-<main class="wrap">
-  <p class="eyebrow">AI Inference Architecture</p>
-  <h1>Real-time &amp; memory-bound inference</h1>
-  <p class="lede">Heterogeneous silicon, deadline-driven systems, and compute at the memory boundary — writing, working code, and early silicon results, from building baseband silicon and applying it to where AI inference is heading.</p>
 
-  <div class="path">
-    <div class="path-lbl">New here — a suggested reading path</div>
-    <ol>
-      <li><a href="small-frees-big.html">Small Frees Big</a> — the thesis: why <em>data movement</em>, not arithmetic, sets the limit for inference.</li>
-      <li><a href="memory-wall.html">The array can't keep up</a> — the physics under the thesis: why memory bandwidth is bought with width and packaging, not clocked.</li>
-      <li><a href="numerics-datapath.html">Block float, rediscovered</a> — the datapath &amp; numerics: MXFP4 is block floating point, and the DL tensor engine is a datapath comms silicon already ships.</li>
-      <li><a href="study.html">Compute at the Memory Boundary</a> — the full study: thesis → filed patent → verified RTL → grounded synthesis → real-model validation.</li>
-      <li><a href="graceful-degradation.html">Bend, don't break</a> — the systems lens: reliability past P99 and tiered QoS, with four live simulations.</li>
-      <li><a href="system-capacity.html">The bandwidth budget</a> — the numbers: a datasheet-calibrated full-system model showing &gt;2× decode capacity, with the $/token verdict and the method stated.</li>
-      <li><a href="fabric.html">The fabric is the next wall</a> — the scale-out lens: a problem statement &amp; literature survey on collective communication, barriers, and QoS across the cluster fabric (reasoning, not a result).</li>
-      <li><a href="trusting-ai-silicon.html">When AI touches the RTL</a> — the methodology: how you trust AI-generated silicon at scale — the ECO discipline, and matching AI edit-freedom to design maturity.</li>
-      <li><a href="digital-twin.html">The digital twin, finally affordable</a> — the economics: why AI makes re-spin avoidance the default, not a luxury.</li>
-      <li><a href="kv-selector-spec.html">KV-selector spec</a> — the coprocessor deep-dive (block &amp; timing diagrams, area/latency).</li>
-      <li><a href="https://jimchakra.github.io/6G-NTN/6g_du_rd_ai.html">6G AI RU/DU study</a> — breadth: the same principles in a 200-core RAN SoC.</li>
-    </ol>
-  </div>
+<div class="hdr">
+  <h1>AI Inference Architecture · Essays &amp; Silicon Studies</h1>
+  <p>Real-time and memory-bound inference — heterogeneous silicon, deadline-driven systems, and
+     compute at the memory boundary: writing, working code, and early silicon results.</p>
+  <div class="badge">ESSAYS · WORKING CODE · AUG–OCT 2026 · PATENT PENDING</div>
+  <div class="sister">Companion site: <a href="https://jimchakra.github.io/6G-NTN/">6G NTN · RF &amp; SoC Architecture Studies</a></div>
+</div>
 
-  <hr class="rule">
+<div class="main">
 
-  <div class="sec">Writing</div>
-  <div class="list">
-    <a class="card" href="study.html">
-      <div class="card-meta">Silicon Study · interactive · patent pending</div>
-      <div class="card-title">Compute at the Memory Boundary — the full study <span class="arw">&#8594;</span></div>
-      <div class="card-sub">Thesis → filed patent → verified RTL → grounded synthesis → hardware-in-the-loop, on one page.</div>
-      <p class="card-desc">The whole argument end to end, in the style of a principal engineer's design notebook: Key Findings, the data-movement thesis with a live energy/$-per-token explorer, the lossless→lossy gate with a live θ knob (real-model co-sim), the datapath and its clock-domain crossing, the CI-backed verification signoff, grounded area, and a 64/64 bit-exact hardware-in-the-loop result.</p>
-    </a>
+<p class="intro">
+  Twelve essays and studies, from building baseband silicon and applying its discipline to where AI
+  inference is heading. One lens throughout: the arithmetic is nearly free and the bytes are the bill —
+  so move only the data that is needed, in as few bits as possible, drop the least valuable first under
+  strain, and on a limited fabric prioritize by cost against return. Every modeled number states its
+  method and its bounds; the pages with live simulations run in the browser, and the code is in the repo.
+</p>
 
-    <a class="card" href="graceful-degradation.html">
-      <div class="card-meta">Chip architecture · complex systems · interactive · new</div>
-      <div class="card-title">Bend, don&rsquo;t break <span class="arw">&#8594;</span></div>
-      <div class="card-sub">Graceful degradation as a chip-design feature — reliability past P99 with no added area, worked through AI inference.</div>
-      <p class="card-desc">A generic truth about complex chips on shared resources: you can&rsquo;t provision the P100 tail, because it lives in contention on shared compute, not the datapath. Build a throttle into the datapath and the same silicon stays reliable past P99 for free — and the headroom you reclaim becomes a tiered-QoS product. Four live explorers: token-deadline anytime degradation, serving-side admission control vs congestion collapse, the capacity-vs-tail-guarantee payoff sold as QoS, and the self-correcting speculative throttle. Plus a comparison of which degradation lever hurts least.</p>
-    </a>
+<p class="path">
+  <b>New here — a reading path.</b>
+  <a href="small-frees-big.html">Small Frees Big</a> is the thesis;
+  <a href="graceful-degradation.html">Bend, don’t break</a> is the centerpiece — the result with a number attached;
+  <a href="study.html">Compute at the Memory Boundary</a> is the silicon;
+  <a href="system-capacity.html">The bandwidth budget</a> is the calibrated full-system model;
+  <a href="numerics-datapath.html">Block float, rediscovered</a> and
+  <a href="memory-wall.html">The array can’t keep up</a> are the physics and the numerics underneath;
+  <a href="fabric.html">The fabric is the next wall</a> takes the thesis one tier out;
+  <a href="digital-twin.html">The digital twin, finally affordable</a>,
+  <a href="trusting-ai-silicon.html">When AI touches the RTL</a>, and
+  <a href="methodology.html">How I run silicon design</a> are the method that makes all of it buildable.
+</p>
 
-    <a class="card" href="system-capacity.html">
-      <div class="card-meta">Full-system model · datasheet-calibrated · interactive · new</div>
-      <div class="card-title">The bandwidth budget <span class="arw">&#8594;</span></div>
-      <div class="card-sub">Same silicon, everything else equal: &gt;2× decode capacity from moving fewer bytes — calibrated to Tenstorrent&rsquo;s published numbers.</div>
-      <p class="card-desc">A first-order full-system (compute die + memory die) model on a Blackhole-class chip, calibrated so the baseline reproduces Tenstorrent&rsquo;s published 350 tok/s/user on DeepSeek-R1. Live explorers: an animated apples-to-apples race, the roofline, cut&rarr;capacity, the prefill/decode split, an anatomy-of-a-token timing view, concurrency &amp; QoS, and a $/token &amp; J/token PPA verdict — king of $/token, honest about energy and area. States its own method (static capacity analysis) and where microarchitecture enters.</p>
-    </a>
+<div class="grid">
 
-    <a class="card" href="trusting-ai-silicon.html">
-      <div class="card-meta">AI-assisted silicon · methodology · new</div>
-      <div class="card-title">When AI touches the RTL <span class="arw">&#8594;</span></div>
-      <div class="card-sub">How you trust AI-generated silicon at production scale — trust the proof, not the diff.</div>
-      <p class="card-desc">A methodology note, not a claim: AI collapses the cost of generating RTL, so at scale the bottleneck moves from writing to trusting. The reframe borrows the discipline silicon already uses for late bugs — the ECO: you don't re-review the netlist, you run equivalence checking. AI edit-freedom should scale inversely with design maturity (generate freely early, ECO-only late), and late edits must be ECO-implementable and gated by a characterized-delta equivalence proof — so a thousand-line diff can't sneak through. Honest survey of the field (ChipNeMo, RTLFixer, formal-in-the-loop repair, agentic-EDA benchmarking) and where the gap is.</p>
-    </a>
+  <!-- Thesis -->
+  <a class="card" href="small-frees-big.html">
+    <div class="card-stripe" style="background:#1e3a5f"></div>
+    <div class="card-body">
+      <div class="card-tag">Architecture · The Thesis</div>
+      <div class="card-title">Small Frees Big</div>
+      <div class="card-desc">
+        Why data movement, not arithmetic, is the whole bill for AI inference — and the shape that
+        follows. Rare earth isn’t rare; you pay to move the ore. Small, targeted compute frees the big
+        engine, and the next move is pushing some of it onto the memory itself — the shape RAN reached first.
+      </div>
+      <div class="card-tabs">
+        <span class="tab-chip">The Bill</span>
+        <span class="tab-chip">The Pattern</span>
+        <span class="tab-chip">Same Shape in AI</span>
+        <span class="tab-chip">Two Frontiers</span>
+        <span class="tab-chip">The Missing Ingredient</span>
+      </div>
+      <span class="card-link">Open essay →</span>
+    </div>
+  </a>
 
-    <a class="card" href="fabric.html">
-      <div class="card-meta">Problem statement &amp; survey · scale-out fabric · new</div>
-      <div class="card-title">The fabric is the next wall <span class="arw">&#8594;</span></div>
-      <div class="card-sub">A problem statement and literature survey — not a result — on why the interconnect is the next wall, read through a communications architect&rsquo;s lens.</div>
-      <p class="card-desc">The data-movement thesis, one tier out: the cluster is a memory hierarchy whose outer tiers (NVLink, network) are the emerging bottleneck. Explains collectives and the barrier (ring all-reduce, max-over-participants), surveys the mature art honestly (InfiniBand SL/VL, SHARP, DCQCN, NCCL, Mooncake/NetKV), and reasons &mdash; as a hypothesis, not a claim &mdash; that per-flow fairness is the wrong QoS objective for barrier-synchronized traffic. Includes a deliberately first-order, loudly-bounded contention model, and states plainly what is known versus open.</p>
-    </a>
+  <!-- Centerpiece -->
+  <a class="card" href="graceful-degradation.html">
+    <div class="card-stripe" style="background:#1a5c35"></div>
+    <div class="card-body">
+      <div class="card-tag">Chip Architecture · Complex Systems · Interactive
+        <span class="core-badge">Centerpiece</span>
+      </div>
+      <div class="card-title">Bend, Don’t Break</div>
+      <div class="card-desc">
+        Graceful degradation as a chip-design feature. You can’t provision the tail past P99 — it lives in
+        contention on shared compute, not the datapath — so build a throttle into the datapath: the same
+        silicon holds the same percentile at ~2× load, and the reclaimed headroom sells as tiered QoS.
+        Four live simulations, quality axis measured on a real model.
+      </div>
+      <div class="card-tabs">
+        <span class="tab-chip">The Principle</span>
+        <span class="tab-chip">Token-Deadline Degrade</span>
+        <span class="tab-chip">Admission Control</span>
+        <span class="tab-chip">Capacity vs Tail</span>
+        <span class="tab-chip">Tiered QoS</span>
+        <span class="tab-chip">Speculative Throttle</span>
+        <span class="tab-chip">Draft Economics</span>
+        <span class="tab-chip">Literature</span>
+      </div>
+      <span class="card-link">Open study →</span>
+    </div>
+  </a>
 
-    <a class="card" href="small-frees-big.html">
-      <div class="card-meta">August 2026 · Architecture</div>
-      <div class="card-title">Small Frees Big <span class="arw">&#8594;</span></div>
-      <div class="card-sub">Why data movement, not arithmetic, is the whole bill for AI inference — and the shape that follows.</div>
-      <p class="card-desc">Rare earth isn't rare — you just pay to move mountains of ore for a trace of metal. Modern inference runs on the same economics: the arithmetic is nearly free, and moving the data is the whole bill. One argument in two moves — small, targeted compute is the hero, and the next move is pushing some of it onto the memory itself — the shape RAN reached first.</p>
-    </a>
+  <!-- Silicon study -->
+  <a class="card" href="study.html">
+    <div class="card-stripe" style="background:#C05E00"></div>
+    <div class="card-body">
+      <div class="card-tag">Silicon Study · Interactive · Patent Pending</div>
+      <div class="card-title">Compute at the Memory Boundary</div>
+      <div class="card-desc">
+        Thesis → filed patent → verified RTL → grounded synthesis → hardware-in-the-loop, on one page.
+        A live energy/$-per-token explorer, the lossless→lossy gate with a live θ knob on a real-model
+        co-sim, the datapath and its clock-domain crossing, CI-backed signoff, grounded area, and a
+        64/64 bit-exact hardware-in-the-loop result.
+      </div>
+      <div class="card-tabs">
+        <span class="tab-chip">Key Findings</span>
+        <span class="tab-chip">Energy Model</span>
+        <span class="tab-chip">The Gate</span>
+        <span class="tab-chip">Real-Model Validation</span>
+        <span class="tab-chip">Datapath &amp; CDC</span>
+        <span class="tab-chip">Verification</span>
+        <span class="tab-chip">HITL</span>
+      </div>
+      <span class="card-link">Open study →</span>
+    </div>
+  </a>
 
-    <a class="card" href="memory-wall.html">
-      <div class="card-meta">Explainer · memory physics · new</div>
-      <div class="card-title">The array can&rsquo;t keep up <span class="arw">&#8594;</span></div>
-      <div class="card-sub">Interface speed is racing; the DRAM core has been flat for twenty years — why bandwidth is bought, not clocked.</div>
-      <p class="card-desc">The physical foundation under the data-movement thesis: the three &ldquo;bandwidths&rdquo; people conflate, why the DRAM array core is stuck near ~50&nbsp;ns while per-pin rate, width, and modulation climb ~100×, why 224G SerDes and co-packaged optics are a different (scale-out) axis, and the huge <em>internal</em> bandwidth that near-memory compute exists to tap. Leaves exactly two durable moves — move fewer bytes, and compute before the pins.</p>
-    </a>
+  <!-- Full-system model -->
+  <a class="card" href="system-capacity.html">
+    <div class="card-stripe" style="background:#2C5282"></div>
+    <div class="card-body">
+      <div class="card-tag">Full-System Model · Datasheet-Calibrated · Interactive</div>
+      <div class="card-title">The Bandwidth Budget</div>
+      <div class="card-desc">
+        Same silicon, everything else equal: &gt;2× decode capacity from moving fewer bytes. A compute-die
+        + memory-die model calibrated so the baseline reproduces Tenstorrent’s published 350 tok/s/user
+        on DeepSeek-R1, then an honest $/token and J/token verdict — king of $/token, candid about
+        energy and area. States its own method and where microarchitecture enters.
+      </div>
+      <div class="card-tabs">
+        <span class="tab-chip">The Race</span>
+        <span class="tab-chip">Roofline</span>
+        <span class="tab-chip">Cut → Capacity</span>
+        <span class="tab-chip">Prefill / Decode</span>
+        <span class="tab-chip">Anatomy of a Token</span>
+        <span class="tab-chip">Concurrency &amp; QoS</span>
+        <span class="tab-chip">PPA Verdict</span>
+      </div>
+      <span class="card-link">Open model →</span>
+    </div>
+  </a>
 
-    <a class="card" href="numerics-datapath.html">
-      <div class="card-meta">Compute datapath &amp; numerics · new</div>
-      <div class="card-title">Block float, rediscovered <span class="arw">&#8594;</span></div>
-      <div class="card-sub">The frontier inference numeric — MXFP4 microscaling — is block floating point, which comms and DSP silicon have shipped for fifty years.</div>
-      <p class="card-desc">A translation from multi-precision vector datapaths to the DL tensor engine: why MX / microscaling <em>is</em> block float at 32-element granularity, how an MX MAC is an <code>int8×int4</code> tile plus a per-block exponent, one FFN down-projection tile mapped end-to-end at MXFP4, and the reframe that low precision is first a <em>bandwidth</em> lever for decode and only second a MAC-area lever for prefill. On the numeric the field is most excited about, the block-float lineage is a head start, not a gap.</p>
-    </a>
+  <!-- Numerics -->
+  <a class="card" href="numerics-datapath.html">
+    <div class="card-stripe" style="background:#6b21a8"></div>
+    <div class="card-body">
+      <div class="card-tag">Compute Datapath · Numerics</div>
+      <div class="card-title">Block Float, Rediscovered</div>
+      <div class="card-desc">
+        The frontier inference numeric — MXFP4 microscaling — is block floating point, which comms and
+        DSP silicon have shipped for fifty years. One idea at four granularities, the block-float MAC,
+        a worked FFN tile, where the sub-byte unpack happens across CUDA, the tensor core, and
+        Tenstorrent — and a programmable piecewise-linear decode engine: freeze the width, program the meaning.
+      </div>
+      <div class="card-tabs">
+        <span class="tab-chip">One Idea, Four Names</span>
+        <span class="tab-chip">What It Costs</span>
+        <span class="tab-chip">The MX MAC</span>
+        <span class="tab-chip">Worked Tile</span>
+        <span class="tab-chip">Bits × Survivors</span>
+        <span class="tab-chip">Where the Unpack Lives</span>
+      </div>
+      <span class="card-link">Open essay →</span>
+    </div>
+  </a>
 
-    <a class="card" href="results.html">
-      <div class="card-meta">Part II · in progress · patent pending</div>
-      <div class="card-title">Compute at the memory boundary <span class="arw">&#8594;</span></div>
-      <div class="card-sub">The near-memory argument, with early results and a roadmap.</div>
-      <p class="card-desc">Why data movement, not arithmetic, sets the limit for inference — and what completing the reduction on the memory side, gating there, and returning only survivors buys you. Near-memory distributed reduction with in-situ output gating; a U.S. provisional filed August 2026. Includes an energy model, a bit-exact tile, and the lossless→lossy gate sweep.</p>
-    </a>
+  <!-- Memory wall -->
+  <a class="card" href="memory-wall.html">
+    <div class="card-stripe" style="background:#0e7490"></div>
+    <div class="card-body">
+      <div class="card-tag">Explainer · Memory Physics</div>
+      <div class="card-title">The Array Can’t Keep Up</div>
+      <div class="card-desc">
+        Interface speed is racing; the DRAM core has been flat for twenty years. Why bandwidth is bought
+        with width and packaging, not clocked — the physical foundation under the thesis, and why the two
+        answers to it are reading fewer bytes and computing where the bytes already are.
+      </div>
+      <div class="card-tabs">
+        <span class="tab-chip">The Flat Core</span>
+        <span class="tab-chip">Three Tricks</span>
+        <span class="tab-chip">HBM by Width</span>
+        <span class="tab-chip">What Follows</span>
+      </div>
+      <span class="card-link">Open explainer →</span>
+    </div>
+  </a>
 
-    <a class="card" href="digital-twin.html">
-      <div class="card-meta">Essay · methodology &amp; economics</div>
-      <div class="card-title">The digital twin, finally affordable <span class="arw">&#8594;</span></div>
-      <div class="card-sub">Why AI coding agents change the economics of silicon re-spins — and why AI without the methodology is a liability.</div>
-      <p class="card-desc">A leading-node premium chip costs ~$1B, mostly engineering labor, and labor is heads × time — where time is dominated by re-spins. The cure (a pre-silicon digital twin, so bring-up is confirmation not discovery) always worked but was too expensive to always build. AI collapses that cost, making re-spin avoidance the default. Evidence-led: a near-memory datapath taken solo to a filed patent, verified RTL, open CI, and a bit-exact hardware-in-the-loop cosim.</p>
-    </a>
+  <!-- Fabric -->
+  <a class="card" href="fabric.html">
+    <div class="card-stripe" style="background:#1e3a5f"></div>
+    <div class="card-body">
+      <div class="card-tag">Problem Statement &amp; Survey · Scale-Out Fabric</div>
+      <div class="card-title">The Fabric Is the Next Wall</div>
+      <div class="card-desc">
+        The data-movement thesis one tier out: the cluster is a memory hierarchy whose outer tiers are
+        the emerging bottleneck. Collectives and the barrier, an honest survey of the mature art
+        (SL/VL, SHARP, DCQCN, Mooncake/NetKV), and a hypothesis — not a claim — that per-flow fairness is
+        the wrong objective for barrier-synchronized traffic. A loudly bounded first-order model.
+      </div>
+      <div class="card-tabs">
+        <span class="tab-chip">The Hierarchy</span>
+        <span class="tab-chip">Collectives &amp; Barriers</span>
+        <span class="tab-chip">The Observation</span>
+        <span class="tab-chip">What the Art Does</span>
+        <span class="tab-chip">Illustrative Model</span>
+        <span class="tab-chip">Open Questions</span>
+      </div>
+      <span class="card-link">Open problem statement →</span>
+    </div>
+  </a>
 
-    <a class="card" href="methodology.html">
-      <div class="card-meta">Methodology</div>
-      <div class="card-title">How I run silicon design <span class="arw">&#8594;</span></div>
-      <div class="card-sub">Deciding the architecture, and executing it into working silicon.</div>
-      <p class="card-desc">A bias-aware architecture-decision sequence (static latency/peak → discrete-event contention sim → DVFS) and concurrent RTL/FW/DV from a single YAML source of truth — so firmware runs day-one and DV closes at tape-out, making bring-up confirmation, not discovery.</p>
-    </a>
-  </div>
+  <!-- Digital twin -->
+  <a class="card" href="digital-twin.html">
+    <div class="card-stripe" style="background:#2C5282"></div>
+    <div class="card-body">
+      <div class="card-tag">Methodology · AI &amp; Re-Spin Economics</div>
+      <div class="card-title">The Digital Twin, Finally Affordable</div>
+      <div class="card-desc">
+        A silicon program’s cost is heads × time, and time is dominated by re-spins. The twin methodology
+        always worked; it was too expensive to always build. AI coding agents collapse that cost — if the
+        twin is the oracle. The flow, the three-part contract, where trust bottoms out, and two payoffs:
+        re-spin avoidance and ~2× capacity from bend-don’t-break.
+      </div>
+      <div class="card-tabs">
+        <span class="tab-chip">Re-Spin Economics</span>
+        <span class="tab-chip">What AI Changes</span>
+        <span class="tab-chip">Two Levels, Two Payoffs</span>
+        <span class="tab-chip">The Flow</span>
+        <span class="tab-chip">Golden &amp; Trust</span>
+        <span class="tab-chip">The Receipts</span>
+      </div>
+      <span class="card-link">Open essay →</span>
+    </div>
+  </a>
 
-  <div class="sec">Build &amp; code</div>
-  <div class="list">
-    <a class="card" href="results.html">
-      <div class="card-meta">Results · roadmap</div>
-      <div class="card-title">Early results &amp; roadmap <span class="arw">&#8594;</span></div>
-      <p class="card-desc">The energy wins (locality, decode movement share), the gate threshold sweep, and a DONE / NEXT roadmap from thesis to a synthesized tile.</p>
-    </a>
+  <!-- Trusting AI silicon -->
+  <a class="card" href="trusting-ai-silicon.html">
+    <div class="card-stripe" style="background:#1a4d35"></div>
+    <div class="card-body">
+      <div class="card-tag">AI-Assisted Silicon · Methodology</div>
+      <div class="card-title">When AI Touches the RTL</div>
+      <div class="card-desc">
+        Trust the proof, not the diff. AI collapses the cost of generating RTL, so the bottleneck moves
+        from writing to trusting. Borrow the ECO discipline: edit-freedom scales inversely with design
+        maturity, late edits must be equivalence-checked, semantic conflicts need a schema plus LEC oracle,
+        and overnight AI is only as good as the oracle that bounds it.
+      </div>
+      <div class="card-tabs">
+        <span class="tab-chip">The Trust Problem</span>
+        <span class="tab-chip">ECO Discipline</span>
+        <span class="tab-chip">Maturity-Staged Freedom</span>
+        <span class="tab-chip">Semantic Conflict</span>
+        <span class="tab-chip">Overnight AI</span>
+        <span class="tab-chip">Field Survey</span>
+      </div>
+      <span class="card-link">Open note →</span>
+    </div>
+  </a>
 
-    <a class="card" href="https://github.com/jimchakra/AI/blob/main/inference_energy_sim.py" target="_blank" rel="noopener">
-      <div class="card-meta">Python · model</div>
-      <div class="card-title">Inference energy model <span class="arw">&#8594;</span></div>
-      <p class="card-desc">A first-order per-token energy and $/token model with an honest array-access vs. transport split — modeling weight and KV-cache bandwidth per token, precision scaling (INT8/INT4/FP4), a roofline ridge point, and activation-gating locality — showing why memory-bound decode is &gt;90% data movement and where near-memory pays off.</p>
-    </a>
+  <!-- Methodology -->
+  <a class="card" href="methodology.html">
+    <div class="card-stripe" style="background:#C05E00"></div>
+    <div class="card-body">
+      <div class="card-tag">Methodology · Architecture &amp; Co-Design</div>
+      <div class="card-title">How I Run Silicon Design</div>
+      <div class="card-desc">
+        Deciding the architecture, then executing it into working silicon. A bias-aware decision sequence
+        — static latency/peak → discrete-event contention simulation → DVFS — that finds the true P99 and
+        the real constraint, and a concurrent RTL/FW/DV flow from one YAML source of truth so that
+        bring-up is confirmation, not discovery.
+      </div>
+      <div class="card-tabs">
+        <span class="tab-chip">Decision Sequence</span>
+        <span class="tab-chip">Static vs Simulation</span>
+        <span class="tab-chip">Single Source of Truth</span>
+        <span class="tab-chip">Co-Design Flow</span>
+        <span class="tab-chip">The Demonstrator</span>
+      </div>
+      <span class="card-link">Open methodology →</span>
+    </div>
+  </a>
 
-    <a class="card" href="https://github.com/jimchakra/AI/tree/main/nmgr" target="_blank" rel="noopener">
-      <div class="card-meta">Hardware · demonstrator</div>
-      <div class="card-title">Near-memory tile (NMGR) <span class="arw">&#8594;</span></div>
-      <p class="card-desc">Microarchitecture spec, a bit-exact golden reference, and test vectors for a near-memory gated-reduction datapath — the contract layer feeding RTL, synthesis, and $/token.</p>
-    </a>
-  </div>
+  <!-- KV selector spec -->
+  <a class="card" href="kv-selector-spec.html">
+    <div class="card-stripe" style="background:#6b21a8"></div>
+    <div class="card-body">
+      <div class="card-tag">Coprocessor Spec · Near-Memory</div>
+      <div class="card-title">Near-Memory KV Selector</div>
+      <div class="card-desc">
+        A content-aware KV-read skipper as a small near-memory coprocessor: per-page key summaries in
+        base-die SRAM, scored against the query, top-k pages selected, DRAM arrays touched only for
+        survivors. Decide on compute, enforce on memory. Block diagram, timing model, and the
+        area/latency budget with the overheads named.
+      </div>
+      <div class="card-tabs">
+        <span class="tab-chip">Problem</span>
+        <span class="tab-chip">Block Diagram</span>
+        <span class="tab-chip">Timing Model</span>
+        <span class="tab-chip">Area &amp; Latency</span>
+        <span class="tab-chip">Overheads</span>
+      </div>
+      <span class="card-link">Open spec →</span>
+    </div>
+  </a>
 
-  <div class="foot">
-    <span class="lbl">Elsewhere</span>
-    <a href="https://jimchakra.github.io/6G-NTN/6g_du_rd_ai.html">6G AI RU/DU silicon architecture study &#8594;</a>
-  </div>
-</main>
+  <!-- Results -->
+  <a class="card" href="results.html">
+    <div class="card-stripe" style="background:#0e7490"></div>
+    <div class="card-body">
+      <div class="card-tag">Results · Roadmap</div>
+      <div class="card-title">Early Results &amp; Roadmap</div>
+      <div class="card-desc">
+        The near-memory argument with its early numbers: the energy wins from locality and decode movement
+        share, the gate-threshold sweep, the real-model KV read-skip result, and a DONE / NEXT roadmap from
+        thesis to a synthesized tile.
+      </div>
+      <div class="card-tabs">
+        <span class="tab-chip">Energy Wins</span>
+        <span class="tab-chip">Gate Sweep</span>
+        <span class="tab-chip">Real Model</span>
+        <span class="tab-chip">Done / Next</span>
+      </div>
+      <span class="card-link">Open results →</span>
+    </div>
+  </a>
+
+  <!-- 6G DU study (companion site) -->
+  <a class="card" href="https://jimchakra.github.io/6G-NTN/6g_du_rd_ai.html">
+    <div class="card-stripe" style="background:#1a4d35"></div>
+    <div class="card-body">
+      <div class="card-tag">Breadth · 5G/6G RAN DU Architecture · Companion Site</div>
+      <div class="card-title">6G AI RU/DU Silicon Architecture Study</div>
+      <div class="card-desc">
+        The same principles in a 200-core RAN SoC on TSMC N3E: SimPy Monte-Carlo contention closes PUSCH
+        at P99 180 µs with 42% margin, shows the scheduler ‘failure’ is priority inversion rather than
+        capacity, and quantifies fixed-function ROI — the deadline-partitioned shape AI inference is converging on.
+      </div>
+      <div class="card-tabs">
+        <span class="tab-chip">Co-Design Flow</span>
+        <span class="tab-chip">Envelope</span>
+        <span class="tab-chip">Contention Sim</span>
+        <span class="tab-chip">DVFS</span>
+        <span class="tab-chip">O-RAN</span>
+      </div>
+      <span class="card-link">Open study →</span>
+    </div>
+  </a>
+
+</div><!-- grid -->
+
+</div><!-- main -->
+
+<div class="footer">
+  All pages open in any modern browser · Simulations run client-side · Reference implementations and
+  calibration in the repo: <a href="https://github.com/jimchakra/AI">github.com/jimchakra/AI</a>
+  · Jim Chou · Aug–Oct 2026 · Patent pending
+</div>
+
 </body>
 </html>
